@@ -85,10 +85,10 @@ export const DEVICE_MESSAGE_EVENTS_NAMES = {
 };
 
 // Setup IPC Server for load balancing
-const serverid = "10.0.1.5";
+const serverid = "10.0.1.6";
 var ipc = require('node-ipc');
 ipc.config.id   = 'cloud-server-'+serverid;
-ipc.config.retry= 0;
+ipc.config.retry= 10;
 
 ipc.connectToNet(
     'routingdb',
@@ -240,6 +240,7 @@ class Device extends EventEmitter {
     this._connectionStartTime = new Date();
     
     //Send update to RoutingDB
+    logger.log("About to call ipc...");
     ipc.of.routingdb.emit(
         'update', 
         JSON.stringify({deviceid: this._id, server: serverid})
