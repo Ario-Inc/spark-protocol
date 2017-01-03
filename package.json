@@ -28,7 +28,8 @@
     "nullthrows": "^1.0.0",
     "ursa": "*",
     "when": "*",
-    "xtend": "*"
+    "xtend": "*",
+    "node-ipc": "*"
   },
   "devDependencies": {
     "babel-cli": "^6.18.0",

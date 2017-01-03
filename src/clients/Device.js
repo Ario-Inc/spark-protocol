@@ -84,6 +84,38 @@ export const DEVICE_MESSAGE_EVENTS_NAMES = {
   SUBSCRIBE: 'Subscribe',
 };
 
+// Setup IPC Server for load balancing
+const serverid = "10.0.1.5";
+var ipc = require('node-ipc');
+ipc.config.id   = 'cloud-server-'+serverid;
+ipc.config.retry= 0;
+
+ipc.connectToNet(
+    'routingdb',
+    '10.0.1.7',
+    2000,
+    function(){
+        ipc.of.routingdb.on(
+            'connect',
+            function(){
+                ipc.log('## connected to routingdb ##'.rainbow, ipc.config.delay);
+            }
+        );
+        ipc.of.routingdb.on(
+            'disconnect',
+            function(){
+                ipc.log('disconnected from routingdb'.notice);
+            }
+        );
+        ipc.of.routingdb.on(
+            'results',  //any event or message type your server listens for 
+            function(data){
+                ipc.log('got a message from routingdb : '.debug, data);
+            }
+        );
+    }
+);
+
 /**
  * Implementation of the Particle messaging protocol
  * @Device
@@ -206,6 +238,12 @@ class Device extends EventEmitter {
 
   ready = () => {
     this._connectionStartTime = new Date();
+    
+    //Send update to RoutingDB
+    ipc.of.routingdb.emit(
+        'update', 
+        JSON.stringify({deviceid: this._id, server: serverid})
+    );
 
     logger.log(
       'On Device Ready:\r\n',
