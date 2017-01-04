@@ -592,7 +592,7 @@ class Device extends EventEmitter {
   getDescription = async (): Promise<*> => {
     const isBusy = !this._isSocketAvailable(null);
     if (isBusy) {
-      throw new Error('This core is locked during the flashing process.');
+      throw new Error('This device is locked during the flashing process.');
     }
 
     try {
@@ -618,7 +618,7 @@ class Device extends EventEmitter {
   ): Promise<*> => {
     const isBusy = !this._isSocketAvailable(null);
     if (isBusy) {
-      throw new Error('This core is locked during the flashing process.');
+      throw new Error('This device is locked during the flashing process.');
     }
 
     await this._ensureWeHaveIntrospectionData();
@@ -647,7 +647,7 @@ class Device extends EventEmitter {
   ): Promise<*> => {
     const isBusy = !this._isSocketAvailable(null);
     if (isBusy) {
-      throw new Error('This core is locked during the flashing process.');
+      throw new Error('This device is locked during the flashing process.');
     }
 
     // TODO: data type!
@@ -667,7 +667,7 @@ class Device extends EventEmitter {
   ): Promise<*> => {
     const isBusy = !this._isSocketAvailable(null);
     if (isBusy) {
-      throw new Error('This core is locked during the flashing process.');
+      throw new Error('This device is locked during the flashing process.');
     }
 
     const buffer = await this._transformArguments(
@@ -710,26 +710,23 @@ class Device extends EventEmitter {
   };
 
   /**
-   * Asks the core to start or stop its 'raise your hand' signal
+   * Asks the core to start or stop its 'raise your hand' signal.
+   * This will turn `nyan` mode on or off which just flashes the LED a bunch of
+   * colors.
    */
-    // TODO figure out what is it for and why messageName isn't
-    // consistent with messages specification
-  raiseYourHand = async (
-    showSignal: boolean,
-    ..._:void[],
-  ): Promise<*> => {
+  raiseYourHand = async(shouldShowSignal: boolean): Promise<*> => {
     const isBusy = !this._isSocketAvailable(null);
     if (isBusy) {
-      throw new Error('This core is locked during the flashing process.');
+      throw new Error('This device is locked during the flashing process.');
     }
 
     const token = this.sendMessage(
-      '_raiseYourHand',
-      { _writeCoapUri: Messages.raiseYourHandUrlGenerator(showSignal) },
+      'RaiseYourHand',
+      { _writeCoapUri: Messages.raiseYourHandUrlGenerator(shouldShowSignal) },
       null,
     );
     return await this.listenFor(
-      '_raiseYourHandReturn',
+      'RaiseYourHandReturn',
       null,
       token,
     );
@@ -738,7 +735,7 @@ class Device extends EventEmitter {
   flash = async (binary: ?Buffer): Promise<string> => {
     const isBusy = !this._isSocketAvailable(null);
     if (isBusy) {
-      throw new Error('This core is locked during the flashing process.');
+      throw new Error('This device is locked during the flashing process.');
     }
 
     if (!binary || (binary.length === 0)) {
