@@ -21,12 +21,11 @@
 import DeviceAttributeFileRepository from './repository/DeviceAttributeFileRepository';
 import DeviceKeyFileRepository from './repository/DeviceKeyFileRepository';
 import EventPublisher from './lib/EventPublisher';
-import DeviceServer from './server/DeviceServer_v2';
+import DeviceServer from './server/DeviceServer';
 import FileManager from './repository/FileManager';
 import JSONFileManager from './repository/JSONFileManager';
 import ServerConfigFileRepository from './repository/ServerConfigFileRepository';
 import Device from './clients/Device';
-import uuid from './lib/uuid';
 
 export {
   DeviceAttributeFileRepository,
@@ -37,5 +36,4 @@ export {
   JSONFileManager,
   ServerConfigFileRepository,
   Device,
-  uuid,
 };
