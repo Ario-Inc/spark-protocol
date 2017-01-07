@@ -18,10 +18,9 @@
 *
 */
 
-import type {Duplex} from 'stream';
+import type { Duplex } from 'stream';
 
-import {Transform} from 'stream';
-import {CryptoLib} from './ICrypto';
+import { Transform } from 'stream';
 import crypto from 'crypto';
 import logger from '../lib/logger';
 import settings from '../settings';
@@ -29,11 +28,11 @@ import settings from '../settings';
 type CrytpoStreamOptions = {
   encrypt?: boolean,
   iv: Buffer,
-  key: string,
+  key: Buffer,
 }
 
 class CryptoStream extends Transform {
-  _key: string;
+  _key: Buffer;
   _iv: Buffer;
   _encrypt: boolean;
 
