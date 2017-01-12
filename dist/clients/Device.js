@@ -484,6 +484,8 @@ var Device = function (_EventEmitter) {
         return -1;
       }
 
+      console.log('MMMMMM', message);
+
       _this._cipherStream.write(message);
 
       return token || 0;
@@ -547,7 +549,7 @@ var Device = function (_EventEmitter) {
         }, _callee4, _this2);
       }));
 
-      return function (_x, _x2, _x3) {
+      return function (_x, _x2, _x3, _x4) {
         return _ref4.apply(this, arguments);
       };
     }();
@@ -685,7 +687,7 @@ var Device = function (_EventEmitter) {
         }, _callee6, _this2);
       }));
 
-      return function (_x4) {
+      return function (_x5) {
         return _ref6.apply(this, arguments);
       };
     }();
@@ -730,7 +732,7 @@ var Device = function (_EventEmitter) {
         }, _callee7, _this2);
       }));
 
-      return function (_x5, _x6) {
+      return function (_x6, _x7) {
         return _ref7.apply(this, arguments);
       };
     }();
@@ -800,7 +802,7 @@ var Device = function (_EventEmitter) {
         }, _callee8, _this2);
       }));
 
-      return function (_x7, _x8) {
+      return function (_x8, _x9) {
         return _ref8.apply(this, arguments);
       };
     }();
@@ -837,13 +839,14 @@ var Device = function (_EventEmitter) {
         }, _callee9, _this2);
       }));
 
-      return function (_x9) {
+      return function (_x10) {
         return _ref9.apply(this, arguments);
       };
     }();
 
     _this.flash = function () {
       var _ref10 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee10(binary) {
+        var address = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : '0x0';
         var isBusy, flasher;
         return _regenerator2.default.wrap(function _callee10$(_context10) {
           while (1) {
@@ -869,7 +872,7 @@ var Device = function (_EventEmitter) {
                 throw new Error('Update failed - File was too small!');
 
               case 6:
-                if (!(binary && binary.length > MAX_BINARY_SIZE)) {
+                if (!(binary && binary.length > MAX_BINARY_SIZE && address === '0x0')) {
                   _context10.next = 9;
                   break;
                 }
@@ -887,7 +890,7 @@ var Device = function (_EventEmitter) {
                 _this.emit(DEVICE_EVENT_NAMES.FLASH_STARTED);
 
                 _context10.next = 15;
-                return flasher.startFlashBuffer(binary);
+                return flasher.startFlashBuffer(binary, address);
 
               case 15:
 
@@ -914,7 +917,7 @@ var Device = function (_EventEmitter) {
         }, _callee10, _this2, [[10, 20]]);
       }));
 
-      return function (_x10) {
+      return function (_x11, _x12) {
         return _ref10.apply(this, arguments);
       };
     }();
@@ -1046,7 +1049,7 @@ var Device = function (_EventEmitter) {
         }, _callee11, _this2);
       }));
 
-      return function (_x11, _x12) {
+      return function (_x14, _x15) {
         return _ref11.apply(this, arguments);
       };
     }();
@@ -1066,7 +1069,7 @@ var Device = function (_EventEmitter) {
             case 2:
               _context13.prev = 2;
               return _context13.delegateYield(_regenerator2.default.mark(function _callee12() {
-                var systemMessage, data, firstFunctionState, functionState;
+                var systemMessage, data, systemInformation, functionState;
                 return _regenerator2.default.wrap(function _callee12$(_context12) {
                   while (1) {
                     switch (_context12.prev = _context12.next) {
@@ -1081,7 +1084,7 @@ var Device = function (_EventEmitter) {
 
                         //got a description, is it any good?
                         data = systemMessage.getPayload();
-                        firstFunctionState = JSON.parse(data.toString());
+                        systemInformation = JSON.parse(data.toString());
 
                         // In the newer firmware the application data comes in a later message.
                         // We run a race to see if the function state comes in the first response.
@@ -1092,8 +1095,8 @@ var Device = function (_EventEmitter) {
                           var data = applicationMessage.getPayload();
                           return JSON.parse(data.toString());
                         }), new _promise2.default(function (resolve, reject) {
-                          if (firstFunctionState.f && firstFunctionState.v) {
-                            resolve(firstFunctionState);
+                          if (systemInformation.f && systemInformation.v) {
+                            resolve(systemInformation);
                           }
                         })]);
 
@@ -1106,9 +1109,10 @@ var Device = function (_EventEmitter) {
                           functionState.v = _Messages2.default.translateIntTypes(functionState.v);
                         }
 
+                        _this._systemInformation = systemInformation;
                         _this._deviceFunctionState = functionState;
 
-                      case 11:
+                      case 12:
                       case 'end':
                         return _context12.stop();
                     }
@@ -1132,6 +1136,10 @@ var Device = function (_EventEmitter) {
         }
       }, _callee13, _this2, [[2, 6]]);
     }));
+
+    _this.getSystemInformation = function () {
+      return _this._systemInformation;
+    };
 
     _this.onCoreEvent = function (event) {
       _this.sendCoreEvent(event);

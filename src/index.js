@@ -20,14 +20,18 @@
 
 import DeviceAttributeFileRepository from './repository/DeviceAttributeFileRepository';
 import DeviceKeyFileRepository from './repository/DeviceKeyFileRepository';
+import ClaimCodeManager from './lib/ClaimCodeManager';
 import EventPublisher from './lib/EventPublisher';
 import DeviceServer from './server/DeviceServer';
 import FileManager from './repository/FileManager';
 import JSONFileManager from './repository/JSONFileManager';
 import ServerKeyFileRepository from './repository/ServerKeyFileRepository';
 import Device from './clients/Device';
+import * as settings from './settings';
+import defaultBindings from './defaultBindings';
 
 export {
+  ClaimCodeManager,
   DeviceAttributeFileRepository,
   DeviceKeyFileRepository,
   DeviceServer,
@@ -36,4 +40,6 @@ export {
   JSONFileManager,
   ServerKeyFileRepository,
   Device,
+  defaultBindings,
+  settings,
 };
