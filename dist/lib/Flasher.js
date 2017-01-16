@@ -12,6 +12,14 @@ var _from = require('babel-runtime/core-js/array/from');
 
 var _from2 = _interopRequireDefault(_from);
 
+var _parseInt = require('babel-runtime/core-js/number/parse-int');
+
+var _parseInt2 = _interopRequireDefault(_parseInt);
+
+var _isNan = require('babel-runtime/core-js/number/is-nan');
+
+var _isNan2 = _interopRequireDefault(_isNan);
+
 var _regenerator = require('babel-runtime/regenerator');
 
 var _regenerator2 = _interopRequireDefault(_regenerator);
@@ -40,10 +48,6 @@ var _logger = require('../lib/logger');
 
 var _logger2 = _interopRequireDefault(_logger);
 
-var _utilities = require('../lib/utilities');
-
-var _utilities2 = _interopRequireDefault(_utilities);
-
 var _BufferStream = require('./BufferStream');
 
 var _BufferStream2 = _interopRequireDefault(_BufferStream);
@@ -51,6 +55,14 @@ var _BufferStream2 = _interopRequireDefault(_BufferStream);
 var _Device = require('../clients/Device');
 
 var _Device2 = _interopRequireDefault(_Device);
+
+var _ProtocolErrors = require('./ProtocolErrors');
+
+var _ProtocolErrors2 = _interopRequireDefault(_ProtocolErrors);
+
+var _FileTransferStore = require('./FileTransferStore');
+
+var _FileTransferStore2 = _interopRequireDefault(_FileTransferStore);
 
 var _h = require('h5.buffers');
 
@@ -100,53 +112,75 @@ var CHUNK_SIZE = 256; /*
                       *
                       */
 
-var MAX_CHUNK_SIZE = 594;
 var MAX_MISSED_CHUNKS = 10;
+var MAX_BINARY_SIZE = 108000; // According to the forums this is the max size for core.
 
 var Flasher =
 
 //
 // OTA tweaks
 //
-function Flasher(client) {
+function Flasher(client, maxBinarySize, otaChunkSize) {
 	var _this = this;
 
 	(0, _classCallCheck3.default)(this, Flasher);
 	this._chunk = null;
 	this._chunkSize = CHUNK_SIZE;
+	this._maxBinarySize = MAX_BINARY_SIZE;
 	this._fileStream = null;
 	this._lastCrc = null;
 	this._protocolVersion = 0;
 	this._missedChunks = new _set2.default();
-	this._fastOtaEnabled = false;
+	this._fastOtaEnabled = true;
 	this._ignoreMissedChunks = false;
 
 	this.startFlashBuffer = function () {
 		var _ref = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee(buffer) {
-			var address = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : '0x0';
+			var fileTransferStore = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : _FileTransferStore2.default.FIRMWARE;
+			var address = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : '0x0';
 			return _regenerator2.default.wrap(function _callee$(_context) {
 				while (1) {
 					switch (_context.prev = _context.next) {
 						case 0:
-							_context.prev = 0;
+							if (!(!buffer || buffer.length === 0)) {
+								_context.next = 3;
+								break;
+							}
+
+							_logger2.default.log('flash failed! - file is empty! ', { deviceID: _this._client.getID() });
+
+							throw new Error('Update failed - File was empty!');
+
+						case 3:
+							if (!(buffer && buffer.length > _this._maxBinarySize)) {
+								_context.next = 6;
+								break;
+							}
+
+							_logger2.default.log('flash failed! - file is too BIG ' + buffer.length, { deviceID: _this._client.getID() });
+
+							throw new Error('Update failed - File was too big!');
+
+						case 6:
+							_context.prev = 6;
 
 							if (_this._claimConnection()) {
-								_context.next = 3;
+								_context.next = 9;
 								break;
 							}
 
 							return _context.abrupt('return');
 
-						case 3:
+						case 9:
 
 							_this._startTime = new Date();
 
 							_this._prepare(buffer);
-							_context.next = 7;
-							return _this._beginUpdate(buffer, address);
+							_context.next = 13;
+							return _this._beginUpdate(buffer, fileTransferStore, address);
 
-						case 7:
-							_context.next = 9;
+						case 13:
+							_context.next = 15;
 							return _promise2.default.race([
 							// Fail after 60 of trying to flash
 							new _promise2.default(function (resolve, reject) {
@@ -155,31 +189,31 @@ function Flasher(client) {
 								}, 60 * 1000);
 							}), _this._sendFile()]);
 
-						case 9:
-							_context.next = 11;
+						case 15:
+							_context.next = 17;
 							return _this._onAllChunksDone();
 
-						case 11:
+						case 17:
 							_this._cleanup();
-							_context.next = 18;
+							_context.next = 24;
 							break;
 
-						case 14:
-							_context.prev = 14;
-							_context.t0 = _context['catch'](0);
+						case 20:
+							_context.prev = 20;
+							_context.t0 = _context['catch'](6);
 
 							_this._cleanup();
 							throw _context.t0;
 
-						case 18:
+						case 24:
 						case 'end':
 							return _context.stop();
 					}
 				}
-			}, _callee, _this, [[0, 14]]);
+			}, _callee, _this, [[6, 20]]);
 		}));
 
-		return function (_x, _x2) {
+		return function (_x) {
 			return _ref.apply(this, arguments);
 		};
 	}();
@@ -214,7 +248,7 @@ function Flasher(client) {
 	};
 
 	this._beginUpdate = function () {
-		var _ref2 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee3(buffer, address) {
+		var _ref2 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee3(buffer, fileTransferStore, address) {
 			var maxTries, tryBeginUpdate;
 			return _regenerator2.default.wrap(function _callee3$(_context3) {
 				while (1) {
@@ -241,7 +275,7 @@ function Flasher(client) {
 													// NOTE: this is 6 because it's double the ChunkMissed 3 second delay
 													// The 90 second delay is crazy but try it just in case.
 													delay = maxTries > 0 ? 6 : 90;
-													sentStatus = _this._sendBeginUpdateMessage(buffer, address);
+													sentStatus = _this._sendBeginUpdateMessage(buffer, fileTransferStore, address);
 
 													maxTries--;
 
@@ -265,6 +299,8 @@ function Flasher(client) {
 														if (message && message.getPayloadLength() > 0) {
 															failReason = _Messages2.default.fromBinary(message.getPayload(), 'byte');
 														}
+
+														failReason = !(0, _isNan2.default)(failReason) ? _ProtocolErrors2.default.get((0, _parseInt2.default)(failReason)) || failReason : failReason;
 
 														throw new Error('aborted ' + failReason);
 													}),
@@ -325,12 +361,12 @@ function Flasher(client) {
 			}, _callee3, _this);
 		}));
 
-		return function (_x4, _x5) {
+		return function (_x4, _x5, _x6) {
 			return _ref2.apply(this, arguments);
 		};
 	}();
 
-	this._sendBeginUpdateMessage = function (fileBuffer, address) {
+	this._sendBeginUpdateMessage = function (fileBuffer, fileTransferStore, address) {
 		//(MDM Proposal) Optional payload to enable fast OTA and file placement:
 		//u8  flags    0x01 - Fast OTA available - when set the server can
 		//  provide fast OTA transfer
@@ -347,7 +383,7 @@ function Flasher(client) {
 		var flags = 0; //fast ota available
 		var chunkSize = _this._chunkSize;
 		var fileSize = fileBuffer.length;
-		var destFlag = 0; //TODO: reserved for later
+		var destFlag = fileTransferStore;
 		var destAddr = parseInt(address);
 
 		if (_this._fastOtaEnabled) {
@@ -362,19 +398,12 @@ function Flasher(client) {
 		bufferBuilder.pushUInt8(destFlag);
 		bufferBuilder.pushUInt32(destAddr);
 
-		console.log();
-		console.log();
-		console.log(bufferBuilder.toBuffer());
-		console.log(fileBuffer[0], fileBuffer[1], fileBuffer[2], fileBuffer[3]);
-		console.log();
-		console.log();
-
 		//UpdateBegin — sent by Server to initiate an OTA firmware update
 		return !!_this._client.sendMessage('UpdateBegin', null, bufferBuilder.toBuffer(), _this);
 	};
 
 	this._sendFile = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee4() {
-		var canUseFastOTA, message, counter;
+		var canUseFastOTA, messageToken, message, counter;
 		return _regenerator2.default.wrap(function _callee4$(_context4) {
 			while (1) {
 				switch (_context4.prev = _context4.next) {
@@ -405,9 +434,9 @@ function Flasher(client) {
 							break;
 						}
 
-						_this._sendChunk(_this._chunkIndex);
-						_this._readNextChunk();
+						messageToken = _this._sendChunk(_this._chunkIndex);
 
+						_this._readNextChunk();
 						// We don't need to wait for the response if using FastOTA.
 
 						if (!canUseFastOTA) {
@@ -419,7 +448,7 @@ function Flasher(client) {
 
 					case 10:
 						_context4.next = 12;
-						return _this._client.listenFor('ChunkReceived', null, null);
+						return _this._client.listenFor('ChunkReceived', null, messageToken);
 
 					case 12:
 						message = _context4.sent;
@@ -488,7 +517,7 @@ function Flasher(client) {
 						_context6.next = 5;
 						return _promise2.default.all(missedChunks.map(function () {
 							var _ref6 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee5(chunkIndex) {
-								var offset, message;
+								var offset, messageToken, message;
 								return _regenerator2.default.wrap(function _callee5$(_context5) {
 									while (1) {
 										switch (_context5.prev = _context5.next) {
@@ -499,7 +528,7 @@ function Flasher(client) {
 												_this._chunkIndex = chunkIndex;
 
 												_this._readNextChunk();
-												_this._sendChunk(chunkIndex);
+												messageToken = _this._sendChunk(chunkIndex);
 
 												// We don't need to wait for the response if using FastOTA.
 
@@ -512,7 +541,7 @@ function Flasher(client) {
 
 											case 7:
 												_context5.next = 9;
-												return _this._client.listenFor('ChunkReceived', null, null);
+												return _this._client.listenFor('ChunkReceived', null, messageToken);
 
 											case 9:
 												message = _context5.sent;
@@ -532,7 +561,7 @@ function Flasher(client) {
 								}, _callee5, _this);
 							}));
 
-							return function (_x6) {
+							return function (_x7) {
 								return _ref6.apply(this, arguments);
 							};
 						}()));
@@ -565,50 +594,33 @@ function Flasher(client) {
 	};
 
 	this._sendChunk = function () {
-		var _ref7 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee7() {
-			var chunkIndex = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
-			var encodedCrc, writeCoapUri;
-			return _regenerator2.default.wrap(function _callee7$(_context7) {
-				while (1) {
-					switch (_context7.prev = _context7.next) {
-						case 0:
-							encodedCrc = _Messages2.default.toBinary((0, _nullthrows2.default)(_this._lastCrc), 'crc');
+		var chunkIndex = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
 
-							writeCoapUri = function writeCoapUri(message) {
-								message.addOption(new _Option2.default(_h3.Message.Option.URI_PATH, new Buffer('c')));
-								message.addOption(new _Option2.default(_h3.Message.Option.URI_QUERY, encodedCrc));
-								if (_this._fastOtaEnabled && _this._protocolVersion > 0) {
-									var indexBinary = _Messages2.default.toBinary(chunkIndex, 'uint16');
-									message.addOption(new _Option2.default(_h3.Message.Option.URI_QUERY, indexBinary));
-								}
-								return message;
-							};
+		var encodedCrc = _Messages2.default.toBinary((0, _nullthrows2.default)(_this._lastCrc), 'crc');
 
-							_this._client.sendMessage('Chunk', {
-								crc: encodedCrc,
-								_writeCoapUri: writeCoapUri
-							}, _this._chunk, _this);
-
-						case 3:
-						case 'end':
-							return _context7.stop();
-					}
-				}
-			}, _callee7, _this);
-		}));
-
-		return function (_x7) {
-			return _ref7.apply(this, arguments);
+		var writeCoapUri = function writeCoapUri(message) {
+			message.addOption(new _Option2.default(_h3.Message.Option.URI_PATH, new Buffer('c')));
+			message.addOption(new _Option2.default(_h3.Message.Option.URI_QUERY, encodedCrc));
+			if (_this._fastOtaEnabled && _this._protocolVersion > 0) {
+				var indexBinary = _Messages2.default.toBinary(chunkIndex, 'uint16');
+				message.addOption(new _Option2.default(_h3.Message.Option.URI_QUERY, indexBinary));
+			}
+			return message;
 		};
-	}();
 
-	this._onAllChunksDone = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee8() {
-		return _regenerator2.default.wrap(function _callee8$(_context8) {
+		return _this._client.sendMessage('Chunk', {
+			crc: encodedCrc,
+			_writeCoapUri: writeCoapUri
+		}, _this._chunk, _this);
+	};
+
+	this._onAllChunksDone = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee7() {
+		return _regenerator2.default.wrap(function _callee7$(_context7) {
 			while (1) {
-				switch (_context8.prev = _context8.next) {
+				switch (_context7.prev = _context7.next) {
 					case 0:
 						if (_this._client.sendMessage('UpdateDone', null, null, _this)) {
-							_context8.next = 2;
+							_context7.next = 2;
 							break;
 						}
 
@@ -616,10 +628,10 @@ function Flasher(client) {
 
 					case 2:
 					case 'end':
-						return _context8.stop();
+						return _context7.stop();
 				}
 			}
-		}, _callee8, _this);
+		}, _callee7, _this);
 	}));
 
 	this._cleanup = function () {
@@ -638,32 +650,32 @@ function Flasher(client) {
 		}
 	};
 
-	this._waitForMissedChunks = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee9() {
-		return _regenerator2.default.wrap(function _callee9$(_context9) {
+	this._waitForMissedChunks = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee8() {
+		return _regenerator2.default.wrap(function _callee8$(_context8) {
 			while (1) {
-				switch (_context9.prev = _context9.next) {
+				switch (_context8.prev = _context8.next) {
 					case 0:
 						if (!(_this._protocolVersion <= 0)) {
-							_context9.next = 2;
+							_context8.next = 2;
 							break;
 						}
 
-						return _context9.abrupt('return');
+						return _context8.abrupt('return');
 
 					case 2:
-						return _context9.abrupt('return', new _promise2.default(function (resolve, reject) {
+						return _context8.abrupt('return', new _promise2.default(function (resolve, reject) {
 							return setTimeout(function () {
-								console.log('finished waiting');
+								_logger2.default.log('finished waiting');
 								resolve();
 							}, 3 * 1000);
 						}));
 
 					case 3:
 					case 'end':
-						return _context9.stop();
+						return _context8.stop();
 				}
 			}
-		}, _callee9, _this);
+		}, _callee8, _this);
 	}));
 
 	this._getLogInfo = function () {
@@ -708,6 +720,8 @@ function Flasher(client) {
 	};
 
 	this._client = client;
+	this._maxBinarySize = maxBinarySize || MAX_BINARY_SIZE;
+	this._chunkSize = otaChunkSize || CHUNK_SIZE;
 }
 
 /**

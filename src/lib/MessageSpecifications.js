@@ -43,8 +43,43 @@ type HoganTemplate = {
   subs: Object,
 };
 
-// TODO: Check firmware and make sure everything is mapped here
-const MessageSpecifications: Array<[string, MessageSpecificationType]> = [
+export type MessageType =
+  'Hello' |
+  'KeyChange' |
+  'UpdateBegin' |
+  'UpdateAbort' |
+  'Chunk' |
+  'ChunkMissed' |
+  'UpdateDone' |
+  'FunctionCall' |
+  'VariableRequest' |
+  'PrivateEvent' |
+  'PublicEvent' |
+  'Subscribe' |
+  'Describe' |
+  'GetTime' |
+  'SignalStart' |
+  'EventAck' |
+  'EventSlowdown' |
+  'SubscribeAck' |
+  'SubscribeFail' |
+  'GetTimeReturn' |
+  'SignalStartReturn' |
+  'ChunkMissedAck' |
+  'DescribeReturn' |
+  'KeyChanged' |
+  'UpdateReady' |
+  'ChunkReceived' |
+  'ChunkReceivedError' |
+  'FunctionReturn' |
+  'FunctionReturnError' |
+  'VariableValue' |
+  'VariableValueError' |
+  'Ping' |
+  'PingAck' |
+  'SocketPing';
+
+const MessageSpecifications: Array<[MessageType, MessageSpecificationType]> = [
     [
       'Hello',
       {
@@ -69,6 +104,13 @@ const MessageSpecifications: Array<[string, MessageSpecificationType]> = [
         Response: 'UpdateReady',
         type: Message.Type.CON,
         uri: 'u',
+      }
+    ],
+    [
+      'UpdateAbort',
+      {
+        code: Message.Code.BAD_REQUEST,
+        type: Message.Type.NON,
       }
     ],
     [
@@ -165,10 +207,10 @@ const MessageSpecifications: Array<[string, MessageSpecificationType]> = [
       }
     ],
     [
-      'RaiseYourHand',
+      'SignalStart',
       {
         code: Message.Code.PUT,
-        Response: 'RaiseYourHandReturn',
+        Response: 'SignalStartReturn',
         type: Message.Type.CON,
         uri: 's',
       }
@@ -222,7 +264,7 @@ const MessageSpecifications: Array<[string, MessageSpecificationType]> = [
       }
     ],
     [
-      'RaiseYourHandReturn',
+      'SignalStartReturn',
       {
         code: Message.Code.CHANGED,
         type: Message.Type.ACK,

@@ -21,7 +21,10 @@
 *
 */
 
-import type {MessageSpecificationType} from './MessageSpecifications';
+import type {
+  MessageSpecificationType,
+  MessageType,
+} from './MessageSpecifications';
 
 import fs from 'fs';
 import settings from '../settings';
@@ -45,7 +48,7 @@ const _getRouteKey = (code: string, path: string): string => {
 }
 
 class Messages {
-  _specifications: Map<string, MessageSpecificationType> =
+  _specifications: Map<MessageType, MessageSpecificationType> =
     new Map(MessageSpecifications);
 
   /**
@@ -91,7 +94,7 @@ class Messages {
     return this._routes.get(uri);
   };
 
-  getResponseType = (name: string): ?string => {
+  getResponseType = (name: MessageType): ?string => {
     const specification = this._specifications.get(name);
     return specification ? specification.Response : null;
   };
@@ -100,7 +103,7 @@ class Messages {
     return message.getCode() < Message.Code.BAD_REQUEST;
   };
 
-  isNonTypeMessage = (messageName: string): boolean => {
+  isNonTypeMessage = (messageName: MessageType): boolean => {
     const specification = this._specifications.get(messageName);
     if (!specification) {
       return false;
@@ -120,7 +123,7 @@ class Messages {
    * @returns {*}
    */
   wrap = (
-    messageName: string,
+    messageName: MessageType,
     messageCounterId: number,
     params: ?Object,
     data: ?Buffer,
@@ -364,49 +367,27 @@ class Messages {
     return bufferBuilder.toBuffer();
   };
 
-  buildArguments = (value: Object, args: Array<Array<any>>): ?Buffer => {
-    console.log('TODO: Type `buildArguments`');
+  buildArguments = (
+    requestArgs: {[key: string]: string},
+    args: Array<Array<any>>,
+  ): ?Buffer => {
     try {
-      var bufferBuilder = new BufferBuilder();
+      const bufferBuilder = new BufferBuilder();
+      const requestArgsKey = Object.keys(requestArgs)[0];
       args.filter(arg => arg).forEach((arg, index) => {
         if (index > 0) {
           this.toBinary('&', 'string', bufferBuilder);
         }
 
-        const name = arg[0] || Object.keys(value)[0];
+        const name = arg[0] || requestArgsKey;
         const type = arg[1];
-        const val = value[name];
+        const val = requestArgs[name];
 
         this.toBinary(val, type, bufferBuilder);
       })
       return bufferBuilder.toBuffer();
     } catch (exception) {
       logger.error('buildArguments: ', exception);
-    }
-
-    return null;
-  };
-
-  parseArguments = (
-    args: ?Array<Object>,
-    descriptions: Array<[string, string]>,
-  ): ?Array<any> => {
-    try {
-      if (!args || args.length !== descriptions.length) {
-        return null;
-      }
-
-      return descriptions
-        .filter(description => description)
-        .map((description, index) => {
-          const type = description[1];
-          args = nullthrows(args);
-          const value = index < args.length ? args[index] : '';
-
-          this.fromBinary(new Buffer(value, 'binary'), type)
-        });
-    } catch (exception) {
-      logger.error('parseArguments: ', exception);
     }
 
     return null;

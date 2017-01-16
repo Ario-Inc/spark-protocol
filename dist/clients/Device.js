@@ -3,7 +3,7 @@
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.DEVICE_MESSAGE_EVENTS_NAMES = exports.DEVICE_EVENT_NAMES = undefined;
+exports.DEVICE_MESSAGE_EVENTS_NAMES = exports.SYSTEM_EVENT_NAMES = exports.DEVICE_EVENT_NAMES = undefined;
 
 var _promise = require('babel-runtime/core-js/promise');
 
@@ -55,9 +55,9 @@ var _Messages = require('../lib/Messages');
 
 var _Messages2 = _interopRequireDefault(_Messages);
 
-var _utilities = require('../lib/utilities');
+var _FileTransferStore = require('../lib/FileTransferStore');
 
-var _utilities2 = _interopRequireDefault(_utilities);
+var _FileTransferStore2 = _interopRequireDefault(_FileTransferStore);
 
 var _Flasher = require('../lib/Flasher');
 
@@ -130,8 +130,6 @@ var COUNTER_MAX = 65536;
 var TOKEN_COUNTER_MAX = 256;
 var KEEP_ALIVE_TIMEOUT = _settings2.default.keepaliveTimeout;
 var SOCKET_TIMEOUT = _settings2.default.socketTimeout;
-var MAX_BINARY_SIZE = 108000; // According to the forums this is the max size.
-
 
 var DEVICE_EVENT_NAMES = exports.DEVICE_EVENT_NAMES = {
   DISCONNECT: 'disconnect',
@@ -141,7 +139,27 @@ var DEVICE_EVENT_NAMES = exports.DEVICE_EVENT_NAMES = {
   READY: 'ready'
 };
 
-// this constants should be consistent with message names in
+var SYSTEM_EVENT_NAMES = exports.SYSTEM_EVENT_NAMES = {
+  APP_HASH: 'spark/device/app-hash',
+  CLAIM_CODE: 'spark/device/claim/code',
+  FLASH_AVAILABLE: 'spark/flash/available',
+  FLASH_PROGRESS: 'spark/flash/progress',
+  FLASH_STATUS: 'spark/flash/status',
+  GET_IP: 'spark/device/ip',
+  GET_NAME: 'spark/device/name',
+  GET_RANDOM_BUFFER: 'spark/device/random',
+  IDENTITY: 'spark/device/ident/0',
+  LAST_RESET: 'spark/device/last_reset', // This should just have a friendly string in its payload.
+  MAX_BINARY: 'spark/hardware/max_binary',
+  OTA_CHUNK_SIZE: 'spark/hardware/ota_chunk_size',
+  RESET: 'spark/device/reset', // send this to reset passing "safe mode"/"dfu"/"reboot"
+  SAFE_MODE: 'spark/device/safemode',
+  SAFE_MODE_UPDATING: 'spark/safe-mode-updater/updating',
+  SPARK_SUBSYSTEM: 'spark/cc3000-patch-version',
+  SPARK_STATUS: 'spark/status'
+};
+
+// These constants should be consistent with message names in
 // MessageSpecifications.js
 var DEVICE_MESSAGE_EVENTS_NAMES = exports.DEVICE_MESSAGE_EVENTS_NAMES = {
   GET_TIME: 'GetTime',
@@ -205,6 +223,8 @@ var Device = function (_EventEmitter) {
     _this._disconnectCounter = 0;
     _this._id = '';
     _this._lastCorePing = new Date();
+    _this._maxBinarySize = null;
+    _this._otaChunkSize = null;
     _this._particleProductId = 0;
     _this._platformId = 0;
     _this._productFirmwareVersion = 0;
@@ -212,6 +232,15 @@ var Device = function (_EventEmitter) {
     _this._sendCounter = 0;
     _this._sendToken = 0;
     _this._tokens = {};
+
+    _this.setMaxBinarySize = function (maxBinarySize) {
+      _this._maxBinarySize = maxBinarySize;
+    };
+
+    _this.setOtaChunkSize = function (maxBinarySize) {
+      _this._otaChunkSize = maxBinarySize;
+    };
+
     _this.startupProtocol = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee() {
       return _regenerator2.default.wrap(function _callee$(_context) {
         while (1) {
@@ -232,7 +261,7 @@ var Device = function (_EventEmitter) {
               });
 
               _context.next = 8;
-              return _this.handshake();
+              return _this.startHandshake();
 
             case 8:
             case 'end':
@@ -241,7 +270,7 @@ var Device = function (_EventEmitter) {
         }
       }, _callee, _this2);
     }));
-    _this.handshake = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee3() {
+    _this.startHandshake = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee3() {
       return _regenerator2.default.wrap(function _callee3$(_context3) {
         while (1) {
           switch (_context3.prev = _context3.next) {
@@ -405,8 +434,6 @@ var Device = function (_EventEmitter) {
       _this._incrementReceiveCounter();
       if (message.isEmpty() && message.isConfirmable()) {
         _this._lastCorePing = new Date();
-        // var delta = (this._lastCorePing - this._connectionStartTime) / 1000.0;
-        // logger.log('core ping @ ', delta, ' seconds ', { deviceID: this._id });
         _this.sendReply('PingAck', message.getId());
         return;
       }
@@ -484,8 +511,6 @@ var Device = function (_EventEmitter) {
         return -1;
       }
 
-      console.log('MMMMMM', message);
-
       _this._cipherStream.write(message);
 
       return token || 0;
@@ -498,7 +523,7 @@ var Device = function (_EventEmitter) {
           while (1) {
             switch (_context4.prev = _context4.next) {
               case 0:
-                tokenHex = token ? _utilities2.default.toHexString(token) : null;
+                tokenHex = token ? _this._toHexString(token) : null;
                 beVerbose = _settings2.default.showVerboseDeviceLogs;
                 return _context4.abrupt('return', new _promise2.default(function (resolve, reject) {
                   var timeout = setTimeout(function () {
@@ -549,7 +574,7 @@ var Device = function (_EventEmitter) {
         }, _callee4, _this2);
       }));
 
-      return function (_x, _x2, _x3, _x4) {
+      return function (_x, _x2, _x3) {
         return _ref4.apply(this, arguments);
       };
     }();
@@ -574,7 +599,7 @@ var Device = function (_EventEmitter) {
     };
 
     _this._useToken = function (name, sendToken) {
-      var key = _utilities2.default.toHexString(sendToken);
+      var key = _this._toHexString(sendToken);
 
       if (_this._tokens[key]) {
         throw new Error('Token ' + name + ' ' + _this._tokens[key] + ' ' + key + ' already in use');
@@ -584,7 +609,7 @@ var Device = function (_EventEmitter) {
     };
 
     _this._clearToken = function (sendToken) {
-      var key = _utilities2.default.toHexString(sendToken);
+      var key = _this._toHexString(sendToken);
 
       if (_this._tokens[key]) {
         delete _this._tokens[key];
@@ -624,9 +649,10 @@ var Device = function (_EventEmitter) {
 
             case 6:
               return _context5.abrupt('return', {
-                firmware_version: _this._productFirmwareVersion,
-                product_id: _this._particleProductId,
-                state: _this._deviceFunctionState
+                firmwareVersion: _this._productFirmwareVersion,
+                productID: _this._particleProductId,
+                state: (0, _nullthrows2.default)(_this._deviceFunctionState),
+                systemInformation: (0, _nullthrows2.default)(_this._systemInformation)
               });
 
             case 9:
@@ -687,14 +713,14 @@ var Device = function (_EventEmitter) {
         }, _callee6, _this2);
       }));
 
-      return function (_x5) {
+      return function (_x4) {
         return _ref6.apply(this, arguments);
       };
     }();
 
-    _this.setVariableValue = function () {
-      var _ref7 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee7(name, data) {
-        var isBusy, payload, token;
+    _this.callFunction = function () {
+      var _ref7 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee7(functionName, functionArguments) {
+        var isBusy, buffer, writeUrl, token, message;
         return _regenerator2.default.wrap(function _callee7$(_context7) {
           while (1) {
             switch (_context7.prev = _context7.next) {
@@ -709,59 +735,14 @@ var Device = function (_EventEmitter) {
                 throw new Error('This device is locked during the flashing process.');
 
               case 3:
-
-                // TODO: data type!
-                payload = _Messages2.default.toBinary(data);
-                token = _this.sendMessage('VariableRequest', { name: name }, payload);
-
-                // are we expecting a response?
-                // watches the messages coming back in, listens for a message of this type
-                // with
-
-                _context7.next = 7;
-                return _this.listenFor('VariableValue', null, token);
-
-              case 7:
-                return _context7.abrupt('return', _context7.sent);
-
-              case 8:
-              case 'end':
-                return _context7.stop();
-            }
-          }
-        }, _callee7, _this2);
-      }));
-
-      return function (_x6, _x7) {
-        return _ref7.apply(this, arguments);
-      };
-    }();
-
-    _this.callFunction = function () {
-      var _ref8 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee8(functionName, functionArguments) {
-        var isBusy, buffer, writeUrl, token, message;
-        return _regenerator2.default.wrap(function _callee8$(_context8) {
-          while (1) {
-            switch (_context8.prev = _context8.next) {
-              case 0:
-                isBusy = !_this._isSocketAvailable(null);
-
-                if (!isBusy) {
-                  _context8.next = 3;
-                  break;
-                }
-
-                throw new Error('This device is locked during the flashing process.');
-
-              case 3:
-                _context8.next = 5;
+                _context7.next = 5;
                 return _this._transformArguments(functionName, functionArguments);
 
               case 5:
-                buffer = _context8.sent;
+                buffer = _context7.sent;
 
                 if (buffer) {
-                  _context8.next = 8;
+                  _context7.next = 8;
                   break;
                 }
 
@@ -787,14 +768,51 @@ var Device = function (_EventEmitter) {
                   args: buffer,
                   name: functionName
                 }, null);
-                _context8.next = 13;
+                _context7.next = 13;
                 return _this.listenFor('FunctionReturn', null, token);
 
               case 13:
-                message = _context8.sent;
-                return _context8.abrupt('return', _this._transformFunctionResult(functionName, message));
+                message = _context7.sent;
+                return _context7.abrupt('return', _this._transformFunctionResult(functionName, message));
 
               case 15:
+              case 'end':
+                return _context7.stop();
+            }
+          }
+        }, _callee7, _this2);
+      }));
+
+      return function (_x5, _x6) {
+        return _ref7.apply(this, arguments);
+      };
+    }();
+
+    _this.raiseYourHand = function () {
+      var _ref8 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee8(shouldShowSignal) {
+        var isBusy, token;
+        return _regenerator2.default.wrap(function _callee8$(_context8) {
+          while (1) {
+            switch (_context8.prev = _context8.next) {
+              case 0:
+                isBusy = !_this._isSocketAvailable(null);
+
+                if (!isBusy) {
+                  _context8.next = 3;
+                  break;
+                }
+
+                throw new Error('This device is locked during the flashing process.');
+
+              case 3:
+                token = _this.sendMessage('SignalStart', { _writeCoapUri: _Messages2.default.raiseYourHandUrlGenerator(shouldShowSignal) }, null);
+                _context8.next = 6;
+                return _this.listenFor('SignalStartReturn', null, token);
+
+              case 6:
+                return _context8.abrupt('return', _context8.sent);
+
+              case 7:
               case 'end':
                 return _context8.stop();
             }
@@ -802,14 +820,16 @@ var Device = function (_EventEmitter) {
         }, _callee8, _this2);
       }));
 
-      return function (_x8, _x9) {
+      return function (_x7) {
         return _ref8.apply(this, arguments);
       };
     }();
 
-    _this.raiseYourHand = function () {
-      var _ref9 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee9(shouldShowSignal) {
-        var isBusy, token;
+    _this.flash = function () {
+      var _ref9 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee9(binary) {
+        var fileTransferStore = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : _FileTransferStore2.default.FIRMWARE;
+        var address = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : '0x0';
+        var isBusy, flasher;
         return _regenerator2.default.wrap(function _callee9$(_context9) {
           while (1) {
             switch (_context9.prev = _context9.next) {
@@ -824,101 +844,43 @@ var Device = function (_EventEmitter) {
                 throw new Error('This device is locked during the flashing process.');
 
               case 3:
-                token = _this.sendMessage('RaiseYourHand', { _writeCoapUri: _Messages2.default.raiseYourHandUrlGenerator(shouldShowSignal) }, null);
-                _context9.next = 6;
-                return _this.listenFor('RaiseYourHandReturn', null, token);
-
-              case 6:
-                return _context9.abrupt('return', _context9.sent);
-
-              case 7:
-              case 'end':
-                return _context9.stop();
-            }
-          }
-        }, _callee9, _this2);
-      }));
-
-      return function (_x10) {
-        return _ref9.apply(this, arguments);
-      };
-    }();
-
-    _this.flash = function () {
-      var _ref10 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee10(binary) {
-        var address = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : '0x0';
-        var isBusy, flasher;
-        return _regenerator2.default.wrap(function _callee10$(_context10) {
-          while (1) {
-            switch (_context10.prev = _context10.next) {
-              case 0:
-                isBusy = !_this._isSocketAvailable(null);
-
-                if (!isBusy) {
-                  _context10.next = 3;
-                  break;
-                }
-
-                throw new Error('This device is locked during the flashing process.');
-
-              case 3:
-                if (!(!binary || binary.length === 0)) {
-                  _context10.next = 6;
-                  break;
-                }
-
-                _logger2.default.log('flash failed! - file is empty! ', { deviceID: _this._id });
-
-                throw new Error('Update failed - File was too small!');
-
-              case 6:
-                if (!(binary && binary.length > MAX_BINARY_SIZE && address === '0x0')) {
-                  _context10.next = 9;
-                  break;
-                }
-
-                _logger2.default.log('flash failed! - file is too BIG ' + binary.length, { deviceID: _this._id });
-
-                throw new Error('Update failed - File was too big!');
-
-              case 9:
-                flasher = new _Flasher2.default(_this);
-                _context10.prev = 10;
+                flasher = new _Flasher2.default(_this, _this._maxBinarySize, _this._otaChunkSize);
+                _context9.prev = 4;
 
                 _logger2.default.log('flash device started! - sending api event', { deviceID: _this._id });
 
                 _this.emit(DEVICE_EVENT_NAMES.FLASH_STARTED);
 
-                _context10.next = 15;
-                return flasher.startFlashBuffer(binary, address);
+                _context9.next = 9;
+                return flasher.startFlashBuffer(binary, fileTransferStore, address);
 
-              case 15:
+              case 9:
 
                 _logger2.default.log('flash device finished! - sending api event', { deviceID: _this._id });
 
                 _this.emit(DEVICE_EVENT_NAMES.FLASH_SUCCESS);
 
-                return _context10.abrupt('return', 'Update finished');
+                return _context9.abrupt('return', 'Update finished');
 
-              case 20:
-                _context10.prev = 20;
-                _context10.t0 = _context10['catch'](10);
+              case 14:
+                _context9.prev = 14;
+                _context9.t0 = _context9['catch'](4);
 
-                _logger2.default.log('flash device failed! - sending api event', { deviceID: _this._id, error: _context10.t0 });
+                _logger2.default.log('flash device failed! - sending api event', { deviceID: _this._id, error: _context9.t0 });
 
                 _this.emit(DEVICE_EVENT_NAMES.FLASH_FAILED);
-                throw new Error('Update failed: ' + _context10.t0.message);
+                throw new Error('Update failed: ' + _context9.t0.message);
 
-              case 25:
+              case 19:
               case 'end':
-                return _context10.stop();
+                return _context9.stop();
             }
           }
-        }, _callee10, _this2, [[10, 20]]);
+        }, _callee9, _this2, [[4, 14]]);
       }));
 
-      return function (_x11, _x12) {
-        return _ref10.apply(this, arguments);
+      return function (_x8) {
+        return _ref9.apply(this, arguments);
       };
     }();
 
@@ -993,25 +955,28 @@ var Device = function (_EventEmitter) {
     };
 
     _this._transformArguments = function () {
-      var _ref11 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee11(name, args) {
+      var _ref10 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee10(name, args) {
         var deviceFunctionState, functionState, oldProtocolFunctionState;
-        return _regenerator2.default.wrap(function _callee11$(_context11) {
+        return _regenerator2.default.wrap(function _callee10$(_context10) {
           while (1) {
-            switch (_context11.prev = _context11.next) {
+            switch (_context10.prev = _context10.next) {
               case 0:
+                console.log(args);
+                console.log(args);
+                console.log(args);
+
                 if (args) {
-                  _context11.next = 2;
+                  _context10.next = 5;
                   break;
                 }
 
-                return _context11.abrupt('return', null);
+                return _context10.abrupt('return', null);
 
-              case 2:
-                _context11.next = 4;
+              case 5:
+                _context10.next = 7;
                 return _this._ensureWeHaveIntrospectionData();
 
-              case 4:
-                //TODO: lowercase function keys on new state format
+              case 7:
                 name = name.toLowerCase();
                 deviceFunctionState = (0, _nullthrows2.default)(_this._deviceFunctionState);
                 functionState = deviceFunctionState[name];
@@ -1032,54 +997,54 @@ var Device = function (_EventEmitter) {
                 }
 
                 if (!(!functionState || !functionState.args)) {
-                  _context11.next = 10;
+                  _context10.next = 13;
                   break;
                 }
 
-                return _context11.abrupt('return', null);
+                return _context10.abrupt('return', null);
 
-              case 10:
-                return _context11.abrupt('return', _Messages2.default.buildArguments(args, functionState.args));
+              case 13:
+                return _context10.abrupt('return', _Messages2.default.buildArguments(args, functionState.args));
 
-              case 11:
+              case 14:
               case 'end':
-                return _context11.stop();
+                return _context10.stop();
             }
           }
-        }, _callee11, _this2);
+        }, _callee10, _this2);
       }));
 
-      return function (_x14, _x15) {
-        return _ref11.apply(this, arguments);
+      return function (_x11, _x12) {
+        return _ref10.apply(this, arguments);
       };
     }();
 
-    _this._ensureWeHaveIntrospectionData = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee13() {
-      return _regenerator2.default.wrap(function _callee13$(_context13) {
+    _this._ensureWeHaveIntrospectionData = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee12() {
+      return _regenerator2.default.wrap(function _callee12$(_context12) {
         while (1) {
-          switch (_context13.prev = _context13.next) {
+          switch (_context12.prev = _context12.next) {
             case 0:
               if (!_this._hasFunctionState()) {
-                _context13.next = 2;
+                _context12.next = 2;
                 break;
               }
 
-              return _context13.abrupt('return', _promise2.default.resolve());
+              return _context12.abrupt('return', _promise2.default.resolve());
 
             case 2:
-              _context13.prev = 2;
-              return _context13.delegateYield(_regenerator2.default.mark(function _callee12() {
+              _context12.prev = 2;
+              return _context12.delegateYield(_regenerator2.default.mark(function _callee11() {
                 var systemMessage, data, systemInformation, functionState;
-                return _regenerator2.default.wrap(function _callee12$(_context12) {
+                return _regenerator2.default.wrap(function _callee11$(_context11) {
                   while (1) {
-                    switch (_context12.prev = _context12.next) {
+                    switch (_context11.prev = _context11.next) {
                       case 0:
                         _this.sendMessage('Describe');
-                        _context12.next = 3;
+                        _context11.next = 3;
                         return _this.listenFor('DescribeReturn', null, null);
 
                       case 3:
-                        systemMessage = _context12.sent;
+                        systemMessage = _context11.sent;
 
 
                         //got a description, is it any good?
@@ -1089,7 +1054,7 @@ var Device = function (_EventEmitter) {
                         // In the newer firmware the application data comes in a later message.
                         // We run a race to see if the function state comes in the first response.
 
-                        _context12.next = 8;
+                        _context11.next = 8;
                         return _promise2.default.race([_this.listenFor('DescribeReturn', null, null).then(function (applicationMessage) {
                           //got a description, is it any good?
                           var data = applicationMessage.getPayload();
@@ -1101,7 +1066,7 @@ var Device = function (_EventEmitter) {
                         })]);
 
                       case 8:
-                        functionState = _context12.sent;
+                        functionState = _context11.sent;
 
 
                         if (functionState && functionState.v) {
@@ -1114,32 +1079,46 @@ var Device = function (_EventEmitter) {
 
                       case 12:
                       case 'end':
-                        return _context12.stop();
+                        return _context11.stop();
                     }
                   }
-                }, _callee12, _this2);
+                }, _callee11, _this2);
               })(), 't0', 4);
 
             case 4:
-              _context13.next = 9;
+              _context12.next = 9;
               break;
 
             case 6:
-              _context13.prev = 6;
-              _context13.t1 = _context13['catch'](2);
-              throw _context13.t1;
+              _context12.prev = 6;
+              _context12.t1 = _context12['catch'](2);
+              throw _context12.t1;
 
             case 9:
+            case 'end':
+              return _context12.stop();
+          }
+        }
+      }, _callee12, _this2, [[2, 6]]);
+    }));
+    _this.getSystemInformation = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee13() {
+      return _regenerator2.default.wrap(function _callee13$(_context13) {
+        while (1) {
+          switch (_context13.prev = _context13.next) {
+            case 0:
+              _context13.next = 2;
+              return _this._ensureWeHaveIntrospectionData();
+
+            case 2:
+              return _context13.abrupt('return', _this._systemInformation);
+
+            case 3:
             case 'end':
               return _context13.stop();
           }
         }
-      }, _callee13, _this2, [[2, 6]]);
+      }, _callee13, _this2);
     }));
-
-    _this.getSystemInformation = function () {
-      return _this._systemInformation;
-    };
 
     _this.onCoreEvent = function (event) {
       _this.sendCoreEvent(event);
@@ -1155,10 +1134,8 @@ var Device = function (_EventEmitter) {
 
       var rawFunction = function rawFunction(message) {
         try {
-          message.setMaxAge(ttl >= 0 ? ttl : 60);
-          if (publishedAt) {
-            message.setTimestamp((0, _moment2.default)(publishedAt).toDate());
-          }
+          message.setMaxAge(ttl);
+          message.setTimestamp((0, _moment2.default)(publishedAt).toDate());
         } catch (error) {
           _logger2.default.error('onCoreHeard - ' + error.message);
         }
@@ -1166,7 +1143,8 @@ var Device = function (_EventEmitter) {
         return message;
       };
 
-      var messageName = isPublic ? 'PublicEvent' : 'PrivateEvent';
+      var messageName = isPublic ? DEVICE_MESSAGE_EVENTS_NAMES.PUBLIC_EVENT : DEVICE_MESSAGE_EVENTS_NAMES.PRIVATE_EVENT;
+
       // const userID = (this._userId || '').toLowerCase() + '/';
       // name = name ? name.toString() : name;
       // if (name && name.indexOf && (name.indexOf(userID)===0)) {
@@ -1176,7 +1154,7 @@ var Device = function (_EventEmitter) {
       _this.sendMessage(messageName, {
         _raw: rawFunction,
         event_name: name.toString()
-      }, data && data.toString());
+      }, data && new Buffer(data) || null);
     };
 
     _this._hasFunctionState = function () {
@@ -1193,6 +1171,10 @@ var Device = function (_EventEmitter) {
       return !!(_this._deviceFunctionState && (_this._deviceFunctionState[name] || _this._deviceFunctionState.f && _this._deviceFunctionState.f.some(function (fn) {
         return fn.toLowerCase() === lowercaseName;
       })));
+    };
+
+    _this._toHexString = function (value) {
+      return (value < 10 ? '0' : '') + value.toString(16);
     };
 
     _this.getID = function () {
@@ -1272,15 +1254,10 @@ var Device = function (_EventEmitter) {
    */
 
 
-  // TODO now we have handshake method and this._handshake module
-  // rename one of these.
-
-
   /**
    * Deals with messages coming from the core over our secure connection
    * @param data
    */
-  // TODO figure out and clean this method
 
 
   /**
@@ -1317,17 +1294,11 @@ var Device = function (_EventEmitter) {
    */
 
 
-  // todo make return type annotation
-
-
   /**
    * Ensures we have introspection data from the core, and then
    * requests a variable value to be sent, when received it transforms
    * the response into the appropriate type
    **/
-
-
-  // TODO refactor, make sure if we need this at all
 
 
   // call function on device firmware
@@ -1376,12 +1347,6 @@ var Device = function (_EventEmitter) {
   //-------------
   // Core Events / Spark.publish / Spark.subscribe
   //-------------
-
-  // TODO rework and figure out how to implement subscription with `MY_DEVICES`
-  // right way
-
-
-  // eslint-disable-next-line no-confusing-arrow
 
 
   // eslint-disable-next-line no-confusing-arrow

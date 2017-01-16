@@ -19,12 +19,14 @@
 */
 
 import type {ReadStream} from 'fs';
+import type {FileTransferStoreType} from './FileTransferStore'
 
 import messages from './Messages';
 import logger from '../lib/logger';
-import utilities from '../lib/utilities';
 import BufferStream from './BufferStream';
 import Device from '../clients/Device';
+import ProtocolErrors from './ProtocolErrors';
+import FileTransferStore from './FileTransferStore'
 
 import buffers from 'h5.buffers';
 import { Message } from 'h5.coap';
@@ -41,12 +43,13 @@ import nullthrows from 'nullthrows';
 //
 
 const CHUNK_SIZE = 256;
-const MAX_CHUNK_SIZE = 594;
 const MAX_MISSED_CHUNKS = 10;
+const MAX_BINARY_SIZE = 108000; // According to the forums this is the max size for core.
 
 class Flasher {
 	_chunk: ?Buffer = null;
 	_chunkSize: number = CHUNK_SIZE;
+	_maxBinarySize: number = MAX_BINARY_SIZE;
 	_chunkIndex: number;
 	_client: Device;
 	_fileStream: ?BufferStream = null;
@@ -58,17 +61,38 @@ class Flasher {
 	//
 	// OTA tweaks
 	//
-	_fastOtaEnabled: boolean = false;
+	_fastOtaEnabled: boolean = true;
 	_ignoreMissedChunks: boolean = false;
 
-	constructor(client: Device) {
+	constructor(client: Device, maxBinarySize: ?number, otaChunkSize: ?number) {
 		this._client = client;
+		this._maxBinarySize = maxBinarySize || MAX_BINARY_SIZE;
+		this._chunkSize = otaChunkSize || CHUNK_SIZE;
 	}
 
 	startFlashBuffer = async (
-		buffer: Buffer,
+		buffer: ?Buffer,
+		fileTransferStore: FileTransferStoreType = FileTransferStore.FIRMWARE,
 		address: string = '0x0',
 	): Promise<void> => {
+    if (!buffer || buffer.length === 0) {
+      logger.log(
+        'flash failed! - file is empty! ',
+        { deviceID: this._client.getID() },
+      );
+
+      throw new Error('Update failed - File was empty!');
+    }
+
+    if (buffer && buffer.length > this._maxBinarySize) {
+      logger.log(
+        `flash failed! - file is too BIG ${buffer.length}`,
+        { deviceID: this._client.getID() },
+      );
+
+      throw new Error('Update failed - File was too big!');
+    }
+
     try {
       if (!this._claimConnection()) {
   			return;
@@ -77,7 +101,7 @@ class Flasher {
   		this._startTime = new Date();
 
   		this._prepare(buffer);
-      await this._beginUpdate(buffer, address);
+      await this._beginUpdate(buffer, fileTransferStore, address);
       await Promise.race([
         // Fail after 60 of trying to flash
         new Promise((resolve, reject) => setTimeout(
@@ -123,7 +147,11 @@ class Flasher {
 		return true;
 	};
 
-	_beginUpdate = async (buffer: Buffer, address: string): Promise<*> => {
+	_beginUpdate = async (
+		buffer: Buffer,
+		fileTransferStore: FileTransferStoreType,
+		address: string,
+	): Promise<*> => {
 		let maxTries = 3;
 
 		const tryBeginUpdate = async () => {
@@ -134,7 +162,11 @@ class Flasher {
       // NOTE: this is 6 because it's double the ChunkMissed 3 second delay
       // The 90 second delay is crazy but try it just in case.
       let delay = maxTries > 0 ? 6 : 90;
-      const sentStatus = this._sendBeginUpdateMessage(buffer, address);
+      const sentStatus = this._sendBeginUpdateMessage(
+				buffer,
+				fileTransferStore,
+				address,
+			);
       maxTries--;
 
 			// did we fail to send out the UpdateBegin message?
@@ -159,6 +191,10 @@ class Flasher {
   				if (message && message.getPayloadLength() > 0) {
   					failReason = messages.fromBinary(message.getPayload(), 'byte');
   				}
+
+					failReason = !Number.isNaN(failReason)
+						? ProtocolErrors.get(Number.parseInt(failReason)) || failReason
+						: failReason;
 
   				throw new Error('aborted ' + failReason);
   			}),
@@ -194,7 +230,11 @@ class Flasher {
 		await tryBeginUpdate();
 	};
 
-  _sendBeginUpdateMessage = (fileBuffer: Buffer, address: string): boolean => {
+  _sendBeginUpdateMessage = (
+		fileBuffer: Buffer,
+		fileTransferStore: FileTransferStoreType,
+		address: string,
+	): boolean => {
     //(MDM Proposal) Optional payload to enable fast OTA and file placement:
     //u8  flags    0x01 - Fast OTA available - when set the server can
     //  provide fast OTA transfer
@@ -211,7 +251,7 @@ class Flasher {
     let flags = 0;	//fast ota available
     const chunkSize = this._chunkSize;
     const fileSize = fileBuffer.length;
-    const destFlag = 0;   //TODO: reserved for later
+    const destFlag = fileTransferStore;
     const destAddr = parseInt(address);
 
     if (this._fastOtaEnabled) {
@@ -225,13 +265,6 @@ class Flasher {
     bufferBuilder.pushUInt32(fileSize);
     bufferBuilder.pushUInt8(destFlag);
     bufferBuilder.pushUInt32(destAddr);
-
-		console.log();
-		console.log();
-		console.log(bufferBuilder.toBuffer());
-		console.log(fileBuffer[0],fileBuffer[1],fileBuffer[2],fileBuffer[3]);
-		console.log();
-		console.log();
 
     //UpdateBegin — sent by Server to initiate an OTA firmware update
     return !!this._client.sendMessage(
@@ -265,9 +298,8 @@ class Flasher {
 
 		this._readNextChunk();
 		while (this._chunk) {
-			this._sendChunk(this._chunkIndex);
+			const messageToken = this._sendChunk(this._chunkIndex);
 			this._readNextChunk();
-
 			// We don't need to wait for the response if using FastOTA.
 			if (canUseFastOTA) {
 				continue;
@@ -276,9 +308,8 @@ class Flasher {
 			const message = await this._client.listenFor(
 				'ChunkReceived',
 				null,
-				null,
+				messageToken,
 			);
-
 			if (!messages.statusIsOkay(message)) {
 				throw new Error('\'ChunkReceived\' failed.');
 			}
@@ -309,7 +340,7 @@ class Flasher {
 			this._chunkIndex = chunkIndex;
 
 			this._readNextChunk();
-			this._sendChunk(chunkIndex);
+			const messageToken = this._sendChunk(chunkIndex);
 
 			// We don't need to wait for the response if using FastOTA.
 			if (!canUseFastOTA) {
@@ -319,7 +350,7 @@ class Flasher {
 			const message = await this._client.listenFor(
 				'ChunkReceived',
 				null,
-				null,
+				messageToken,
 			);
 
 			if (!messages.statusIsOkay(message)) {
@@ -349,7 +380,7 @@ class Flasher {
 		this._lastCrc = chunk ? crc32.unsigned(chunk) : null;
 	}
 
-	_sendChunk = async (chunkIndex: ?number = 0): Promise<*> => {
+	_sendChunk = (chunkIndex: ?number = 0): number => {
 		const encodedCrc = messages.toBinary(
 			nullthrows(this._lastCrc),
 			'crc',
@@ -372,7 +403,7 @@ class Flasher {
       return message;
     };
 
-		this._client.sendMessage(
+		return this._client.sendMessage(
 			'Chunk',
 			{
 				crc: encodedCrc,
@@ -420,7 +451,7 @@ class Flasher {
 
 		return new Promise((resolve, reject) => setTimeout(
 			() => {
-				console.log('finished waiting');
+				logger.log('finished waiting');
 				resolve();
 			},
 			3 * 1000,

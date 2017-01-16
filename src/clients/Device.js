@@ -22,6 +22,8 @@ import type { Socket } from 'net';
 import type { Duplex } from 'stream';
 import type { Event } from '../types';
 import type Handshake from '../lib/Handshake';
+import type { MessageType } from '../lib/MessageSpecifications';
+import type {FileTransferStoreType} from '../lib/FileTransferStore';
 
 import EventEmitter from 'events';
 import moment from 'moment';
@@ -31,12 +33,20 @@ import { Message } from 'h5.coap';
 import settings from '../settings';
 import CryptoManager from '../lib/CryptoManager';
 import Messages from '../lib/Messages';
+import FileTransferStore from '../lib/FileTransferStore';
 
-import utilities from '../lib/utilities';
 import Flasher from '../lib/Flasher';
 import logger from '../lib/logger';
 import { BufferReader } from 'h5.buffers';
 import nullthrows from 'nullthrows';
+
+
+type DeviceDescription = {|
+  firmwareVersion: number,
+  productID: number,
+  state: Object,
+  systemInformation: Object,
+|};
 
 // Hello — sent first by Core then by Server immediately after handshake, never again
 // Ignored — sent by either side to respond to a message with a bad counter value.
@@ -73,8 +83,6 @@ const COUNTER_MAX = 65536;
 const TOKEN_COUNTER_MAX = 256;
 const KEEP_ALIVE_TIMEOUT = settings.keepaliveTimeout;
 const SOCKET_TIMEOUT = settings.socketTimeout;
-const MAX_BINARY_SIZE = 108000; // According to the forums this is the max size.
-
 
 export const DEVICE_EVENT_NAMES = {
   DISCONNECT: 'disconnect',
@@ -84,7 +92,27 @@ export const DEVICE_EVENT_NAMES = {
   READY: 'ready',
 };
 
-// this constants should be consistent with message names in
+export const SYSTEM_EVENT_NAMES = {
+  APP_HASH: 'spark/device/app-hash',
+  CLAIM_CODE: 'spark/device/claim/code',
+  FLASH_AVAILABLE: 'spark/flash/available',
+  FLASH_PROGRESS: 'spark/flash/progress',
+  FLASH_STATUS: 'spark/flash/status',
+  GET_IP: 'spark/device/ip',
+  GET_NAME: 'spark/device/name',
+  GET_RANDOM_BUFFER: 'spark/device/random',
+  IDENTITY: 'spark/device/ident/0',
+  LAST_RESET: 'spark/device/last_reset', // This should just have a friendly string in its payload.
+  MAX_BINARY: 'spark/hardware/max_binary',
+  OTA_CHUNK_SIZE: 'spark/hardware/ota_chunk_size',
+  RESET: 'spark/device/reset',  // send this to reset passing "safe mode"/"dfu"/"reboot"
+  SAFE_MODE: 'spark/device/safemode',
+  SAFE_MODE_UPDATING: 'spark/safe-mode-updater/updating',
+  SPARK_SUBSYSTEM: 'spark/cc3000-patch-version',
+  SPARK_STATUS: 'spark/status',
+};
+
+// These constants should be consistent with message names in
 // MessageSpecifications.js
 export const DEVICE_MESSAGE_EVENTS_NAMES = {
   GET_TIME: 'GetTime',
@@ -138,6 +166,8 @@ class Device extends EventEmitter {
   _disconnectCounter: number = 0;
   _id: string = '';
   _lastCorePing: Date = new Date();
+  _maxBinarySize: ?number = null;
+  _otaChunkSize: ?number = null;
   _owningFlasher: ?Flasher;
   _particleProductId: number = 0;
   _platformId: number = 0;
@@ -147,7 +177,7 @@ class Device extends EventEmitter {
   _sendToken: number = 0;
   _socket: Socket;
   _systemInformation: ?Object;
-  _tokens: {[key: string]: string} = {};
+  _tokens: {[key: string]: MessageType} = {};
   _handshake: Handshake;
 
   constructor(
@@ -161,6 +191,14 @@ class Device extends EventEmitter {
     this._socket = socket;
     this._handshake = handshake;
   }
+
+  setMaxBinarySize = (maxBinarySize: number): void => {
+    this._maxBinarySize = maxBinarySize;
+  };
+
+  setOtaChunkSize = (maxBinarySize: number): void => {
+    this._otaChunkSize = maxBinarySize;
+  };
 
   /**
    * configure our socket and start the handshake
@@ -183,12 +221,10 @@ class Device extends EventEmitter {
       (): void => this.disconnect('socket timeout'),
     );
 
-    await this.handshake();
+    await this.startHandshake();
   };
 
-  // TODO now we have handshake method and this._handshake module
-  // rename one of these.
-  handshake = async (): Promise<*> => {
+  startHandshake = async (): Promise<*> => {
     // when the handshake is done, we can expect two stream properties,
     // '_decipherStream' and '_cipherStream'
     try {
@@ -294,7 +330,6 @@ class Device extends EventEmitter {
    * Deals with messages coming from the core over our secure connection
    * @param data
    */
-  // TODO figure out and clean this method
   routeMessage = (data: Buffer) => {
     const message = Messages.unwrap(data);
     if (!message) {
@@ -334,8 +369,6 @@ class Device extends EventEmitter {
     this._incrementReceiveCounter();
     if (message.isEmpty() && message.isConfirmable()) {
       this._lastCorePing = new Date();
-      // var delta = (this._lastCorePing - this._connectionStartTime) / 1000.0;
-      // logger.log('core ping @ ', delta, ' seconds ', { deviceID: this._id });
       this.sendReply('PingAck', message.getId());
       return;
     }
@@ -364,7 +397,7 @@ class Device extends EventEmitter {
   };
 
   sendReply = (
-    messageName: string,
+    messageName: MessageType,
     id: number,
     data: ?Buffer,
     token: ?number,
@@ -406,7 +439,7 @@ class Device extends EventEmitter {
 
 
   sendMessage = (
-    messageName: string,
+    messageName: MessageType,
     params: ?Object,
     data: ?Buffer,
     requester?: Object,
@@ -448,8 +481,6 @@ class Device extends EventEmitter {
       return -1;
     }
 
-    console.log('MMMMMM', message);
-
     this._cipherStream.write(message);
 
     return token || 0;
@@ -463,12 +494,12 @@ class Device extends EventEmitter {
    *  sendMessage)
    */
   listenFor = async (
-    eventName: string,
+    eventName: MessageType,
     uri: ?string,
     token: ?number,
     ..._:void[]
   ): Promise<*> => {
-    const tokenHex = token ? utilities.toHexString(token) : null;
+    const tokenHex = token ? this._toHexString(token) : null;
     const beVerbose = settings.showVerboseDeviceLogs;
 
     return new Promise((resolve, reject) => {
@@ -560,8 +591,8 @@ class Device extends EventEmitter {
    * @param name
    * @param sendToken
    */
-  _useToken = (name: string, sendToken: number) => {
-    const key = utilities.toHexString(sendToken);
+  _useToken = (name: MessageType, sendToken: number) => {
+    const key = this._toHexString(sendToken);
 
     if (this._tokens[key]) {
       throw new Error(
@@ -577,7 +608,7 @@ class Device extends EventEmitter {
    * @param sendToken
    */
   _clearToken = (sendToken: number): void => {
-    const key = utilities.toHexString(sendToken);
+    const key = this._toHexString(sendToken);
 
     if (this._tokens[key]) {
       delete this._tokens[key];
@@ -595,8 +626,7 @@ class Device extends EventEmitter {
     return Messages.getResponseType(request);
   };
 
-  // todo make return type annotation
-  getDescription = async (): Promise<*> => {
+  getDescription = async (): Promise<DeviceDescription> => {
     const isBusy = !this._isSocketAvailable(null);
     if (isBusy) {
       throw new Error('This device is locked during the flashing process.');
@@ -606,9 +636,10 @@ class Device extends EventEmitter {
       await this._ensureWeHaveIntrospectionData();
 
       return {
-        firmware_version: this._productFirmwareVersion,
-        product_id: this._particleProductId,
-        state: this._deviceFunctionState,
+        firmwareVersion: this._productFirmwareVersion,
+        productID: this._particleProductId,
+        state: nullthrows(this._deviceFunctionState),
+        systemInformation: nullthrows(this._systemInformation),
       };
     } catch (error) {
       throw new Error('No device state!');
@@ -646,30 +677,10 @@ class Device extends EventEmitter {
     return this._transformVariableResult(name, message);
   };
 
-  // TODO refactor, make sure if we need this at all
-  setVariableValue = async (
-    name: string,
-    data: Buffer,
-  ): Promise<*> => {
-    const isBusy = !this._isSocketAvailable(null);
-    if (isBusy) {
-      throw new Error('This device is locked during the flashing process.');
-    }
-
-    // TODO: data type!
-    const payload = Messages.toBinary(data);
-    const token = this.sendMessage('VariableRequest', { name }, payload);
-
-    // are we expecting a response?
-    // watches the messages coming back in, listens for a message of this type
-    // with
-    return await this.listenFor('VariableValue', null, token);
-  };
-
   // call function on device firmware
   callFunction = async (
     functionName: string,
-    functionArguments: Object,
+    functionArguments: {[key: string]: string},
   ): Promise<*> => {
     const isBusy = !this._isSocketAvailable(null);
     if (isBusy) {
@@ -727,12 +738,12 @@ class Device extends EventEmitter {
     }
 
     const token = this.sendMessage(
-      'RaiseYourHand',
+      'SignalStart',
       { _writeCoapUri: Messages.raiseYourHandUrlGenerator(shouldShowSignal) },
       null,
     );
     return await this.listenFor(
-      'RaiseYourHandReturn',
+      'SignalStartReturn',
       null,
       token,
     );
@@ -740,6 +751,7 @@ class Device extends EventEmitter {
 
   flash = async (
     binary: ?Buffer,
+    fileTransferStore: FileTransferStoreType = FileTransferStore.FIRMWARE,
     address: string = '0x0',
   ): Promise<string> => {
     const isBusy = !this._isSocketAvailable(null);
@@ -747,25 +759,7 @@ class Device extends EventEmitter {
       throw new Error('This device is locked during the flashing process.');
     }
 
-    if (!binary || (binary.length === 0)) {
-      logger.log(
-        'flash failed! - file is empty! ',
-        { deviceID: this._id },
-      );
-
-      throw new Error('Update failed - File was too small!');
-    }
-
-    if (binary && binary.length > MAX_BINARY_SIZE && address === '0x0') {
-      logger.log(
-        `flash failed! - file is too BIG ${binary.length}`,
-        { deviceID: this._id },
-      );
-
-      throw new Error('Update failed - File was too big!');
-    }
-
-    const flasher = new Flasher(this);
+    const flasher = new Flasher(this, this._maxBinarySize, this._otaChunkSize);
     try {
       logger.log(
         'flash device started! - sending api event',
@@ -774,7 +768,7 @@ class Device extends EventEmitter {
 
       this.emit(DEVICE_EVENT_NAMES.FLASH_STARTED);
 
-      await flasher.startFlashBuffer(binary, address);
+      await flasher.startFlashBuffer(binary, fileTransferStore, address);
 
       logger.log(
         'flash device finished! - sending api event',
@@ -915,15 +909,16 @@ class Device extends EventEmitter {
    */
   _transformArguments = async (
     name: string,
-    args: ?Object,
+    args: {[key: string]: string},
   ): Promise<?Buffer> => {
-    //logger.log('transform args', { deviceID: this._id });
+    console.log(args);
+    console.log(args);
+console.log(args);
     if (!args) {
       return null;
     }
 
     await this._ensureWeHaveIntrospectionData();
-    //TODO: lowercase function keys on new state format
     name = name.toLowerCase();
     const deviceFunctionState = nullthrows(this._deviceFunctionState);
 
@@ -946,9 +941,8 @@ class Device extends EventEmitter {
     }
 
     if (!functionState || !functionState.args) {
-        return null;
+      return null;
     }
-
     return Messages.buildArguments(args, functionState.args);
   };
 
@@ -998,7 +992,8 @@ class Device extends EventEmitter {
     }
   };
 
-  getSystemInformation = (): ?Object => {
+  getSystemInformation = async (): ?Object => {
+    await this._ensureWeHaveIntrospectionData();
     return this._systemInformation;
   };
 
@@ -1008,17 +1003,14 @@ class Device extends EventEmitter {
   onCoreEvent = (event: Event) => {
     this.sendCoreEvent(event);
   };
-  // TODO rework and figure out how to implement subscription with `MY_DEVICES`
-  // right way
-  sendCoreEvent = (event: Event) => {
+
+  sendCoreEvent = (event: Event): void => {
     const { data, isPublic, name, publishedAt, ttl } = event;
 
     const rawFunction = (message: Message): void => {
       try {
-        message.setMaxAge((ttl >= 0) ? ttl : 60);
-        if (publishedAt) {
-          message.setTimestamp(moment(publishedAt).toDate());
-        }
+        message.setMaxAge(ttl);
+        message.setTimestamp(moment(publishedAt).toDate());
       } catch (error) {
         logger.error(`onCoreHeard - ${error.message}`);
       }
@@ -1026,7 +1018,10 @@ class Device extends EventEmitter {
       return message;
     };
 
-    const messageName = isPublic ? 'PublicEvent' : 'PrivateEvent';
+    const messageName = isPublic
+      ? DEVICE_MESSAGE_EVENTS_NAMES.PUBLIC_EVENT
+      : DEVICE_MESSAGE_EVENTS_NAMES.PRIVATE_EVENT;
+
     // const userID = (this._userId || '').toLowerCase() + '/';
     // name = name ? name.toString() : name;
     // if (name && name.indexOf && (name.indexOf(userID)===0)) {
@@ -1039,7 +1034,7 @@ class Device extends EventEmitter {
         _raw: rawFunction,
         event_name: name.toString(),
       },
-      data && data.toString(),
+      data && new Buffer(data) || null,
     );
   };
 
@@ -1072,11 +1067,13 @@ class Device extends EventEmitter {
     );
   };
 
+  _toHexString = (value: number): string => {
+    return (value < 10 ? '0' : '') + value.toString(16);
+  };
+
   // eslint-disable-next-line no-confusing-arrow
   getID = (): string => this._id;
 
-
-  // eslint-disable-next-line no-confusing-arrow
   getRemoteIPAddress = (): string =>
     this._socket.remoteAddress
       ? this._socket.remoteAddress.toString()

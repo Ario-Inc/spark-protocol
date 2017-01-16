@@ -48,29 +48,31 @@ var _uuid = require('uuid');
 
 var _uuid2 = _interopRequireDefault(_uuid);
 
+var _settings = require('../settings');
+
+var _settings2 = _interopRequireDefault(_settings);
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-/*
-*   Copyright (c) 2015 Particle Industries, Inc.  All rights reserved.
-*
-*   This program is free software; you can redistribute it and/or
-*   modify it under the terms of the GNU Lesser General Public
-*   License as published by the Free Software Foundation, either
-*   version 3 of the License, or (at your option) any later version.
-*
-*   This program is distributed in the hope that it will be useful,
-*   but WITHOUT ANY WARRANTY; without even the implied warranty of
-*   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-*   Lesser General Public License for more details.
-*
-*   You should have received a copy of the GNU Lesser General Public
-*   License along with this program; if not, see <http://www.gnu.org/licenses/>.
-*
-* 
-*
-*/
-
-var ALL_EVENTS = '*all*';
+var ALL_EVENTS = '*all*'; /*
+                          *   Copyright (c) 2015 Particle Industries, Inc.  All rights reserved.
+                          *
+                          *   This program is free software; you can redistribute it and/or
+                          *   modify it under the terms of the GNU Lesser General Public
+                          *   License as published by the Free Software Foundation, either
+                          *   version 3 of the License, or (at your option) any later version.
+                          *
+                          *   This program is distributed in the hope that it will be useful,
+                          *   but WITHOUT ANY WARRANTY; without even the implied warranty of
+                          *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+                          *   Lesser General Public License for more details.
+                          *
+                          *   You should have received a copy of the GNU Lesser General Public
+                          *   License along with this program; if not, see <http://www.gnu.org/licenses/>.
+                          *
+                          * 
+                          *
+                          */
 
 var EventPublisher = function (_EventEmitter) {
   (0, _inherits3.default)(EventPublisher, _EventEmitter);
@@ -86,7 +88,58 @@ var EventPublisher = function (_EventEmitter) {
       args[_key] = arguments[_key];
     }
 
-    return _ret = (_temp = (_this = (0, _possibleConstructorReturn3.default)(this, (_ref = EventPublisher.__proto__ || (0, _getPrototypeOf2.default)(EventPublisher)).call.apply(_ref, [this].concat(args))), _this), _this._subscriptionsByID = new _map2.default(), _this._filterEvents = function (eventHandler, filterOptions) {
+    return _ret = (_temp = (_this = (0, _possibleConstructorReturn3.default)(this, (_ref = EventPublisher.__proto__ || (0, _getPrototypeOf2.default)(EventPublisher)).call.apply(_ref, [this].concat(args))), _this), _this._subscriptionsByID = new _map2.default(), _this.publish = function (eventData) {
+      var ttl = eventData.ttl && eventData.ttl > 0 ? eventData.ttl : _settings2.default.DEFAULT_EVENT_TTL;
+
+      var event = (0, _extends3.default)({}, eventData, {
+        ttl: ttl,
+        publishedAt: (0, _moment2.default)().toISOString()
+      });
+
+      _this._emitWithPrefix(eventData.name, event);
+      _this.emit(ALL_EVENTS, event);
+    }, _this.subscribe = function () {
+      var eventNamePrefix = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : ALL_EVENTS;
+      var eventHandler = arguments[1];
+      var filterOptions = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
+      var subscriberID = arguments[3];
+
+      var subscriptionID = (0, _uuid2.default)();
+      while (_this._subscriptionsByID.has(subscriptionID)) {
+        subscriptionID = (0, _uuid2.default)();
+      }
+
+      var listener = _this._filterEvents(eventHandler, filterOptions);
+
+      _this._subscriptionsByID.set(subscriptionID, {
+        listener: listener,
+        eventNamePrefix: eventNamePrefix,
+        id: subscriptionID,
+        subscriberID: subscriberID
+      });
+
+      _this.on(eventNamePrefix, listener);
+      return subscriptionID;
+    }, _this.unsubscribe = function (subscriptionID) {
+      var _nullthrows = (0, _nullthrows3.default)(_this._subscriptionsByID.get(subscriptionID)),
+          eventNamePrefix = _nullthrows.eventNamePrefix,
+          listener = _nullthrows.listener;
+
+      _this.removeListener(eventNamePrefix, listener);
+      _this._subscriptionsByID.delete(subscriptionID);
+    }, _this.unsubscribeBySubscriberID = function (subscriberID) {
+      _this._subscriptionsByID.forEach(function (subscription) {
+        if (subscription.subscriberID === subscriberID) {
+          _this.unsubscribe(subscription.id);
+        }
+      });
+    }, _this._emitWithPrefix = function (eventName, event) {
+      _this.eventNames().filter(function (eventNamePrefix) {
+        return eventName.startsWith(eventNamePrefix);
+      }).forEach(function (eventNamePrefix) {
+        return _this.emit(eventNamePrefix, event);
+      });
+    }, _this._filterEvents = function (eventHandler, filterOptions) {
       return function (event) {
         var userID = filterOptions.userID,
             deviceID = filterOptions.deviceID;
@@ -101,48 +154,6 @@ var EventPublisher = function (_EventEmitter) {
 
         eventHandler(event);
       };
-    }, _this.publish = function (eventData) {
-      var event = (0, _extends3.default)({}, eventData, {
-        publishedAt: (0, _moment2.default)().toISOString()
-      });
-
-      _this.emit(eventData.name, event);
-      _this.emit(ALL_EVENTS, event);
-    }, _this.subscribe = function () {
-      var eventName = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : ALL_EVENTS;
-      var eventHandler = arguments[1];
-      var filterOptions = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : {};
-      var subscriberID = arguments[3];
-
-      var subscriptionID = (0, _uuid2.default)();
-      while (_this._subscriptionsByID.has(subscriptionID)) {
-        subscriptionID = (0, _uuid2.default)();
-      }
-
-      var listener = _this._filterEvents(eventHandler, filterOptions);
-
-      _this._subscriptionsByID.set(subscriptionID, {
-        listener: listener,
-        eventName: eventName,
-        id: subscriptionID,
-        subscriberID: subscriberID
-      });
-
-      _this.on(eventName, listener);
-      return subscriptionID;
-    }, _this.unsubscribe = function (subscriptionID) {
-      var _nullthrows = (0, _nullthrows3.default)(_this._subscriptionsByID.get(subscriptionID)),
-          eventName = _nullthrows.eventName,
-          listener = _nullthrows.listener;
-
-      _this.removeListener(eventName, listener);
-      _this._subscriptionsByID.delete(subscriptionID);
-    }, _this.unsubscribeBySubscriberID = function (subscriberID) {
-      _this._subscriptionsByID.forEach(function (subscription) {
-        if (subscription.subscriberID === subscriberID) {
-          _this.unsubscribe(subscription.id);
-        }
-      });
     }, _temp), (0, _possibleConstructorReturn3.default)(_this, _ret);
   }
 

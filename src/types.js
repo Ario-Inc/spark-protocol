@@ -1,10 +1,14 @@
 // @flow
 
 export type DeviceAttributes = {
+  appHash: ?string,
+  currentBuildTarget: string,
   deviceID: string,
+  imei?: string,
   ip: string,
+  isCellular: boolean,
+  last_iccid?: string,
   name: string,
-  claimCode: ?string,
   ownerID: ?string,
   particleProductId: number,
   productFirmwareVersion: number,
@@ -13,15 +17,16 @@ export type DeviceAttributes = {
 };
 
 export type Event = EventData & {
+  ttl: number,
   publishedAt: Date,
 };
 
 export type EventData = {
-  data: ?Object | string,
+  data?: string,
   deviceID?: ?string,
   isPublic: boolean,
   name: string,
-  ttl: number,
+  ttl?: number,
   userID?: ?string,
 };
 
