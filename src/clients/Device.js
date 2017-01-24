@@ -173,6 +173,7 @@ class Device extends EventEmitter {
   _platformId: number = 0;
   _productFirmwareVersion: number = 0;
   _recieveCounter: number = 0;
+  _reservedFlags: number = 0;
   _sendCounter: number = 0;
   _sendToken: number = 0;
   _socket: Socket;
@@ -272,6 +273,7 @@ class Device extends EventEmitter {
       const payloadBuffer = new BufferReader(payload);
       this._particleProductId = payloadBuffer.shiftUInt16();
       this._productFirmwareVersion = payloadBuffer.shiftUInt16();
+      this._reservedFlags = payloadBuffer.shiftUInt16();
       this._platformId = payloadBuffer.shiftUInt16();
     } catch (exception) {
       logger.log('error while parsing hello payload ', exception);
@@ -818,6 +820,7 @@ class Device extends EventEmitter {
     this._owningFlasher = flasher;
     return true;
   };
+
   releaseOwnership = (flasher: Flasher): void => {
     logger.log('releasing flash ownership ', { coreID: this._id });
     if (this._owningFlasher === flasher) {
@@ -831,7 +834,6 @@ class Device extends EventEmitter {
       );
     }
   };
-
 
   /**
    *
@@ -911,9 +913,6 @@ class Device extends EventEmitter {
     name: string,
     args: {[key: string]: string},
   ): Promise<?Buffer> => {
-    console.log(args);
-    console.log(args);
-console.log(args);
     if (!args) {
       return null;
     }
@@ -958,7 +957,10 @@ console.log(args);
 
     try {
       this.sendMessage('Describe');
-      const systemMessage = await this.listenFor('DescribeReturn', null, null);
+      const token = this.sendMessage('Describe');
+      const systemMessage = await this.listenFor('DescribeReturn');
+
+      const functionStateAwaitable = this.listenFor('DescribeReturn');
 
       //got a description, is it any good?
       const data = systemMessage.getPayload();
@@ -967,12 +969,11 @@ console.log(args);
       // In the newer firmware the application data comes in a later message.
       // We run a race to see if the function state comes in the first response.
       const functionState = await Promise.race([
-        this.listenFor('DescribeReturn', null, null)
-          .then(applicationMessage => {
-            //got a description, is it any good?
-            const data = applicationMessage.getPayload();
-            return JSON.parse(data.toString());
-          }),
+        functionStateAwaitable.then(applicationMessage => {
+          //got a description, is it any good?
+          const data = applicationMessage.getPayload();
+          return JSON.parse(data.toString());
+        }),
         new Promise((resolve, reject) => {
           if (systemInformation.f && systemInformation.v) {
             resolve(systemInformation);

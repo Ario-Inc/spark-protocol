@@ -229,6 +229,7 @@ var Device = function (_EventEmitter) {
     _this._platformId = 0;
     _this._productFirmwareVersion = 0;
     _this._recieveCounter = 0;
+    _this._reservedFlags = 0;
     _this._sendCounter = 0;
     _this._sendToken = 0;
     _this._tokens = {};
@@ -355,6 +356,7 @@ var Device = function (_EventEmitter) {
         var payloadBuffer = new _h2.BufferReader(payload);
         _this._particleProductId = payloadBuffer.shiftUInt16();
         _this._productFirmwareVersion = payloadBuffer.shiftUInt16();
+        _this._reservedFlags = payloadBuffer.shiftUInt16();
         _this._platformId = payloadBuffer.shiftUInt16();
       } catch (exception) {
         _logger2.default.log('error while parsing hello payload ', exception);
@@ -961,22 +963,18 @@ var Device = function (_EventEmitter) {
           while (1) {
             switch (_context10.prev = _context10.next) {
               case 0:
-                console.log(args);
-                console.log(args);
-                console.log(args);
-
                 if (args) {
-                  _context10.next = 5;
+                  _context10.next = 2;
                   break;
                 }
 
                 return _context10.abrupt('return', null);
 
-              case 5:
-                _context10.next = 7;
+              case 2:
+                _context10.next = 4;
                 return _this._ensureWeHaveIntrospectionData();
 
-              case 7:
+              case 4:
                 name = name.toLowerCase();
                 deviceFunctionState = (0, _nullthrows2.default)(_this._deviceFunctionState);
                 functionState = deviceFunctionState[name];
@@ -997,16 +995,16 @@ var Device = function (_EventEmitter) {
                 }
 
                 if (!(!functionState || !functionState.args)) {
-                  _context10.next = 13;
+                  _context10.next = 10;
                   break;
                 }
 
                 return _context10.abrupt('return', null);
 
-              case 13:
+              case 10:
                 return _context10.abrupt('return', _Messages2.default.buildArguments(args, functionState.args));
 
-              case 14:
+              case 11:
               case 'end':
                 return _context10.stop();
             }
@@ -1034,28 +1032,30 @@ var Device = function (_EventEmitter) {
             case 2:
               _context12.prev = 2;
               return _context12.delegateYield(_regenerator2.default.mark(function _callee11() {
-                var systemMessage, data, systemInformation, functionState;
+                var token, systemMessage, functionStateAwaitable, data, systemInformation, functionState;
                 return _regenerator2.default.wrap(function _callee11$(_context11) {
                   while (1) {
                     switch (_context11.prev = _context11.next) {
                       case 0:
                         _this.sendMessage('Describe');
-                        _context11.next = 3;
-                        return _this.listenFor('DescribeReturn', null, null);
+                        token = _this.sendMessage('Describe');
+                        _context11.next = 4;
+                        return _this.listenFor('DescribeReturn');
 
-                      case 3:
+                      case 4:
                         systemMessage = _context11.sent;
-
+                        functionStateAwaitable = _this.listenFor('DescribeReturn');
 
                         //got a description, is it any good?
+
                         data = systemMessage.getPayload();
                         systemInformation = JSON.parse(data.toString());
 
                         // In the newer firmware the application data comes in a later message.
                         // We run a race to see if the function state comes in the first response.
 
-                        _context11.next = 8;
-                        return _promise2.default.race([_this.listenFor('DescribeReturn', null, null).then(function (applicationMessage) {
+                        _context11.next = 10;
+                        return _promise2.default.race([functionStateAwaitable.then(function (applicationMessage) {
                           //got a description, is it any good?
                           var data = applicationMessage.getPayload();
                           return JSON.parse(data.toString());
@@ -1065,7 +1065,7 @@ var Device = function (_EventEmitter) {
                           }
                         })]);
 
-                      case 8:
+                      case 10:
                         functionState = _context11.sent;
 
 
@@ -1077,7 +1077,7 @@ var Device = function (_EventEmitter) {
                         _this._systemInformation = systemInformation;
                         _this._deviceFunctionState = functionState;
 
-                      case 12:
+                      case 14:
                       case 'end':
                         return _context11.stop();
                     }
