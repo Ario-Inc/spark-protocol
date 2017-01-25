@@ -51,14 +51,10 @@
     "request": "^2.79.0",
     "rmfr": "^1.0.1",
     "ursa": "*",
-<<<<<<< HEAD
     "uuid": "^3.0.1",
     "when": "*",
     "xtend": "*",
     "node-ipc": "*"
-=======
-    "uuid": "^3.0.1"
->>>>>>> 1974b38e3ceedbef35a4581e91921ed0ef1bed36
   },
   "devDependencies": {
     "ava": "^0.17.0",
