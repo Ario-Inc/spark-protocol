@@ -5,6 +5,10 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.DEVICE_MESSAGE_EVENTS_NAMES = exports.SYSTEM_EVENT_NAMES = exports.DEVICE_EVENT_NAMES = undefined;
 
+var _typeof2 = require('babel-runtime/helpers/typeof');
+
+var _typeof3 = _interopRequireDefault(_typeof2);
+
 var _promise = require('babel-runtime/core-js/promise');
 
 var _promise2 = _interopRequireDefault(_promise);
@@ -155,8 +159,8 @@ var SYSTEM_EVENT_NAMES = exports.SYSTEM_EVENT_NAMES = {
   RESET: 'spark/device/reset', // send this to reset passing "safe mode"/"dfu"/"reboot"
   SAFE_MODE: 'spark/device/safemode',
   SAFE_MODE_UPDATING: 'spark/safe-mode-updater/updating',
-  SPARK_SUBSYSTEM: 'spark/cc3000-patch-version',
-  SPARK_STATUS: 'spark/status'
+  SPARK_STATUS: 'spark/status',
+  SPARK_SUBSYSTEM: 'spark/cc3000-patch-version'
 };
 
 // These constants should be consistent with message names in
@@ -469,7 +473,7 @@ var Device = function (_EventEmitter) {
       // set our counter
       if (id < 0) {
         _this._incrementSendCounter();
-        id = _this._sendCounter;
+        id = _this._sendCounter; // eslint-disable-line no-param-reassign
       }
 
       var message = _Messages2.default.wrap(messageName, id, null, data, token, null);
@@ -530,7 +534,7 @@ var Device = function (_EventEmitter) {
                 return _context4.abrupt('return', new _promise2.default(function (resolve, reject) {
                   var timeout = setTimeout(function () {
                     cleanUpListeners();
-                    reject('Request timed out');
+                    reject(new Error('Request timed out'));
                   }, KEEP_ALIVE_TIMEOUT);
 
                   // adds a one time event
@@ -582,8 +586,8 @@ var Device = function (_EventEmitter) {
     }();
 
     _this._increment = function (counter, maxSize) {
-      counter++;
-      return counter < maxSize ? counter : 0;
+      var resultCounter = counter + 1;
+      return resultCounter < maxSize ? resultCounter : 0;
     };
 
     _this._incrementSendCounter = function () {
@@ -620,8 +624,6 @@ var Device = function (_EventEmitter) {
 
     _this._getResponseType = function (tokenString) {
       var request = _this._tokens[tokenString];
-      // logger.log('respType for key ', tokenStr, ' is ', request);
-
       if (!request) {
         return '';
       }
@@ -660,7 +662,7 @@ var Device = function (_EventEmitter) {
             case 9:
               _context5.prev = 9;
               _context5.t0 = _context5['catch'](3);
-              throw new Error('No device state!');
+              throw new Error('No device state!: ' + _context5.t0.message);
 
             case 12:
             case 'end':
@@ -934,7 +936,7 @@ var Device = function (_EventEmitter) {
           result = _Messages2.default.fromBinary(data, variableType);
         }
       } catch (error) {
-        _logger2.default.error('_transformVariableResult - error transforming response ' + error);
+        _logger2.default.error('_transformVariableResult - error transforming response: ' + error);
       }
 
       return result;
@@ -949,7 +951,7 @@ var Device = function (_EventEmitter) {
           result = _Messages2.default.fromBinary(message.getPayload(), variableType);
         }
       } catch (error) {
-        _logger2.default.error('_transformFunctionResult - error transforming response ' + error);
+        _logger2.default.error('_transformFunctionResult - error transforming response: ' + error);
         throw error;
       }
 
@@ -958,7 +960,7 @@ var Device = function (_EventEmitter) {
 
     _this._transformArguments = function () {
       var _ref10 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee10(name, args) {
-        var deviceFunctionState, functionState, oldProtocolFunctionState;
+        var lowercaseName, deviceFunctionState, functionState, oldProtocolFunctionState;
         return _regenerator2.default.wrap(function _callee10$(_context10) {
           while (1) {
             switch (_context10.prev = _context10.next) {
@@ -975,21 +977,21 @@ var Device = function (_EventEmitter) {
                 return _this._ensureWeHaveIntrospectionData();
 
               case 4:
-                name = name.toLowerCase();
+                lowercaseName = name.toLowerCase();
                 deviceFunctionState = (0, _nullthrows2.default)(_this._deviceFunctionState);
-                functionState = deviceFunctionState[name];
+                functionState = deviceFunctionState[lowercaseName];
 
                 if (!functionState || !functionState.args) {
-                  //maybe it's the old protocol?
+                  // maybe it's the old protocol?
                   oldProtocolFunctionState = deviceFunctionState.f;
 
                   if (oldProtocolFunctionState && oldProtocolFunctionState.some(function (fn) {
-                    return fn.toLowerCase() === name;
+                    return fn.toLowerCase() === lowercaseName;
                   })) {
-                    //current / simplified function format (one string arg, int return type)
+                    // current/simplified function format (one string arg, int return type)
                     functionState = {
-                      returns: 'int',
-                      args: [[null, 'string']]
+                      args: [[null, 'string']],
+                      returns: 'int'
                     };
                   }
                 }
@@ -1017,90 +1019,130 @@ var Device = function (_EventEmitter) {
       };
     }();
 
-    _this._ensureWeHaveIntrospectionData = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee12() {
-      return _regenerator2.default.wrap(function _callee12$(_context12) {
-        while (1) {
-          switch (_context12.prev = _context12.next) {
-            case 0:
-              if (!_this._hasFunctionState()) {
-                _context12.next = 2;
-                break;
-              }
+    _this._ensureWeHaveIntrospectionData = function () {
+      var _ref11 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee12() {
+        var counter = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : 0;
 
-              return _context12.abrupt('return', _promise2.default.resolve());
+        var _ret2;
 
-            case 2:
-              _context12.prev = 2;
-              return _context12.delegateYield(_regenerator2.default.mark(function _callee11() {
-                var token, systemMessage, functionStateAwaitable, data, systemInformation, functionState;
-                return _regenerator2.default.wrap(function _callee11$(_context11) {
-                  while (1) {
-                    switch (_context11.prev = _context11.next) {
-                      case 0:
-                        _this.sendMessage('Describe');
-                        token = _this.sendMessage('Describe');
-                        _context11.next = 4;
-                        return _this.listenFor('DescribeReturn');
+        return _regenerator2.default.wrap(function _callee12$(_context12) {
+          while (1) {
+            switch (_context12.prev = _context12.next) {
+              case 0:
+                if (!_this._hasFunctionState()) {
+                  _context12.next = 2;
+                  break;
+                }
 
-                      case 4:
-                        systemMessage = _context11.sent;
-                        functionStateAwaitable = _this.listenFor('DescribeReturn');
+                return _context12.abrupt('return');
 
-                        //got a description, is it any good?
+              case 2:
+                _context12.prev = 2;
+                return _context12.delegateYield(_regenerator2.default.mark(function _callee11() {
+                  var token, systemMessage, functionStateAwaitable, data, systemInformation, gotFunctionState, functionState;
+                  return _regenerator2.default.wrap(function _callee11$(_context11) {
+                    while (1) {
+                      switch (_context11.prev = _context11.next) {
+                        case 0:
+                          token = _this.sendMessage('Describe');
+                          _context11.next = 3;
+                          return _this.listenFor('DescribeReturn', null, token);
 
-                        data = systemMessage.getPayload();
-                        systemInformation = JSON.parse(data.toString());
+                        case 3:
+                          systemMessage = _context11.sent;
 
-                        // In the newer firmware the application data comes in a later message.
-                        // We run a race to see if the function state comes in the first response.
 
-                        _context11.next = 10;
-                        return _promise2.default.race([functionStateAwaitable.then(function (applicationMessage) {
-                          //got a description, is it any good?
-                          var data = applicationMessage.getPayload();
-                          return JSON.parse(data.toString());
-                        }), new _promise2.default(function (resolve, reject) {
-                          if (systemInformation.f && systemInformation.v) {
-                            resolve(systemInformation);
+                          // Sometimes this listener will
+                          functionStateAwaitable = _this.listenFor('DescribeReturn', null, token);
+
+                          // got a description, is it any good?
+
+                          data = systemMessage.getPayload();
+                          systemInformation = JSON.parse(data.toString());
+
+                          // In the newer firmware the application data comes in a later message.
+                          // We run a race to see if the function state comes in the first response.
+
+                          gotFunctionState = false;
+                          _context11.next = 10;
+                          return _promise2.default.race([functionStateAwaitable.then(function (applicationMessage) {
+                            gotFunctionState = true;
+                            // got a description, is it any good?
+                            var applicationMessageData = applicationMessage.getPayload();
+                            return JSON.parse(applicationMessageData.toString());
+                          }), new _promise2.default(function (resolve) {
+                            if (systemInformation.f && systemInformation.v) {
+                              gotFunctionState = true;
+                              resolve(systemInformation);
+                            }
+                          })]);
+
+                        case 10:
+                          functionState = _context11.sent;
+
+                          if (!(!gotFunctionState && counter && counter < 3)) {
+                            _context11.next = 15;
+                            break;
                           }
-                        })]);
 
-                      case 10:
-                        functionState = _context11.sent;
+                          _context11.next = 14;
+                          return _this._ensureWeHaveIntrospectionData((counter || 0) + 1);
 
+                        case 14:
+                          return _context11.abrupt('return', {
+                            v: void 0
+                          });
 
-                        if (functionState && functionState.v) {
-                          //'v':{'temperature':2}
-                          functionState.v = _Messages2.default.translateIntTypes(functionState.v);
-                        }
+                        case 15:
 
-                        _this._systemInformation = systemInformation;
-                        _this._deviceFunctionState = functionState;
+                          if (functionState && functionState.v) {
+                            // 'v':{'temperature':2}
+                            functionState.v = _Messages2.default.translateIntTypes(functionState.v);
+                          }
 
-                      case 14:
-                      case 'end':
-                        return _context11.stop();
+                          _this._systemInformation = systemInformation;
+                          _this._deviceFunctionState = functionState;
+
+                        case 18:
+                        case 'end':
+                          return _context11.stop();
+                      }
                     }
-                  }
-                }, _callee11, _this2);
-              })(), 't0', 4);
+                  }, _callee11, _this2);
+                })(), 't0', 4);
 
-            case 4:
-              _context12.next = 9;
-              break;
+              case 4:
+                _ret2 = _context12.t0;
 
-            case 6:
-              _context12.prev = 6;
-              _context12.t1 = _context12['catch'](2);
-              throw _context12.t1;
+                if (!((typeof _ret2 === 'undefined' ? 'undefined' : (0, _typeof3.default)(_ret2)) === "object")) {
+                  _context12.next = 7;
+                  break;
+                }
 
-            case 9:
-            case 'end':
-              return _context12.stop();
+                return _context12.abrupt('return', _ret2.v);
+
+              case 7:
+                _context12.next = 12;
+                break;
+
+              case 9:
+                _context12.prev = 9;
+                _context12.t1 = _context12['catch'](2);
+                throw _context12.t1;
+
+              case 12:
+              case 'end':
+                return _context12.stop();
+            }
           }
-        }
-      }, _callee12, _this2, [[2, 6]]);
-    }));
+        }, _callee12, _this2, [[2, 9]]);
+      }));
+
+      return function () {
+        return _ref11.apply(this, arguments);
+      };
+    }();
+
     _this.getSystemInformation = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee13() {
       return _regenerator2.default.wrap(function _callee13$(_context13) {
         while (1) {
@@ -1145,12 +1187,6 @@ var Device = function (_EventEmitter) {
 
       var messageName = isPublic ? DEVICE_MESSAGE_EVENTS_NAMES.PUBLIC_EVENT : DEVICE_MESSAGE_EVENTS_NAMES.PRIVATE_EVENT;
 
-      // const userID = (this._userId || '').toLowerCase() + '/';
-      // name = name ? name.toString() : name;
-      // if (name && name.indexOf && (name.indexOf(userID)===0)) {
-      //   name = name.substring(userID.length);
-      // }
-
       _this.sendMessage(messageName, {
         _raw: rawFunction,
         event_name: name.toString()
@@ -1188,8 +1224,7 @@ var Device = function (_EventEmitter) {
     _this.disconnect = function () {
       var message = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : '';
 
-      // eslint-disable-next-line no-plusplus
-      _this._disconnectCounter++;
+      _this._disconnectCounter += 1;
 
       if (_this._disconnectCounter > 1) {
         // don't multi-disconnect
@@ -1260,38 +1295,19 @@ var Device = function (_EventEmitter) {
    */
 
 
-  /**
-   * Adds a listener to our secure message stream
-   * @param name the message type we're waiting on
-   * @param uri - a particular function / variable?
-   * @param token - what message does this go with? (should come from
-   *  sendMessage)
-   */
+  // Adds a listener to our secure message stream
 
 
-  /**
-   * Gets or wraps
-   * @returns {null}
-   */
-
-
-  /**
-   * increments or wraps our token value, and makes sure it isn't in use
-   */
+  // increments or wraps our token value, and makes sure it isn't in use
 
 
   /**
    * Associates a particular token with a message we're sending, so we know
    * what we're getting back when we get an ACK
-   * @param name
-   * @param sendToken
    */
 
 
-  /**
-   * Clears the association with a particular token
-   * @param sendToken
-   */
+  // clears the association with a particular token
 
 
   /**
@@ -1311,45 +1327,21 @@ var Device = function (_EventEmitter) {
    */
 
 
-  /**
-   *
-   * @param name
-   * @param message
-   * @param callback-- callback expects (value, buf, err)
-   * @returns {null}
-   */
+  // Transforms the result from a core function to the correct type.
 
 
-  /**
-   * Transforms the result from a core function to the correct type.
-   * @param name
-   * @param msg
-   * @param callback
-   * @returns {null}
-   */
-
-
-  /**
-   * transforms our object into a nice coap query string
-   * @param name
-   * @param args
-   * @private
-   */
+  // transforms our object into a nice coap query string
 
 
   /**
    * Checks our cache to see if we have the function state, otherwise requests
    * it from the core, listens for it, and resolves our deferred on success
-   * @returns {*}
    */
 
 
   //-------------
   // Core Events / Spark.publish / Spark.subscribe
   //-------------
-
-
-  // eslint-disable-next-line no-confusing-arrow
 
 
   return Device;

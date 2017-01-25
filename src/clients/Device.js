@@ -23,7 +23,7 @@ import type { Duplex } from 'stream';
 import type { Event } from '../types';
 import type Handshake from '../lib/Handshake';
 import type { MessageType } from '../lib/MessageSpecifications';
-import type {FileTransferStoreType} from '../lib/FileTransferStore';
+import type { FileTransferStoreType } from '../lib/FileTransferStore';
 
 import EventEmitter from 'events';
 import moment from 'moment';
@@ -108,8 +108,8 @@ export const SYSTEM_EVENT_NAMES = {
   RESET: 'spark/device/reset',  // send this to reset passing "safe mode"/"dfu"/"reboot"
   SAFE_MODE: 'spark/device/safemode',
   SAFE_MODE_UPDATING: 'spark/safe-mode-updater/updating',
-  SPARK_SUBSYSTEM: 'spark/cc3000-patch-version',
   SPARK_STATUS: 'spark/status',
+  SPARK_SUBSYSTEM: 'spark/cc3000-patch-version',
 };
 
 // These constants should be consistent with message names in
@@ -193,11 +193,11 @@ class Device extends EventEmitter {
     this._handshake = handshake;
   }
 
-  setMaxBinarySize = (maxBinarySize: number): void => {
+  setMaxBinarySize = (maxBinarySize: number) => {
     this._maxBinarySize = maxBinarySize;
   };
 
-  setOtaChunkSize = (maxBinarySize: number): void => {
+  setOtaChunkSize = (maxBinarySize: number) => {
     this._otaChunkSize = maxBinarySize;
   };
 
@@ -416,7 +416,7 @@ class Device extends EventEmitter {
     // set our counter
     if (id < 0) {
       this._incrementSendCounter();
-      id = this._sendCounter;
+      id = this._sendCounter; // eslint-disable-line no-param-reassign
     }
 
 
@@ -445,7 +445,6 @@ class Device extends EventEmitter {
     params: ?Object,
     data: ?Buffer,
     requester?: Object,
-    ..._:void[]
   ): number => {
     if (!this._isSocketAvailable(requester, messageName)) {
       logger.error('This client has an exclusive lock.');
@@ -488,33 +487,29 @@ class Device extends EventEmitter {
     return token || 0;
   };
 
-  /**
-   * Adds a listener to our secure message stream
-   * @param name the message type we're waiting on
-   * @param uri - a particular function / variable?
-   * @param token - what message does this go with? (should come from
-   *  sendMessage)
-   */
+  // Adds a listener to our secure message stream
   listenFor = async (
     eventName: MessageType,
     uri: ?string,
     token: ?number,
-    ..._:void[]
   ): Promise<*> => {
     const tokenHex = token ? this._toHexString(token) : null;
     const beVerbose = settings.showVerboseDeviceLogs;
 
-    return new Promise((resolve, reject) => {
+    return new Promise((
+      resolve: (message: Message) => void,
+      reject: (error?: Error) => void,
+    ) => {
       const timeout = setTimeout(
         () => {
           cleanUpListeners();
-          reject('Request timed out');
+          reject(new Error('Request timed out'));
         },
         KEEP_ALIVE_TIMEOUT,
       );
 
       // adds a one time event
-      const handler = (message: Message): void => {
+      const handler = (message: Message) => {
         clearTimeout(timeout);
         if (uri && message.getUriPath().indexOf(uri) !== 0) {
           if (beVerbose) {
@@ -560,16 +555,10 @@ class Device extends EventEmitter {
   };
 
   _increment = (counter: number, maxSize: number): number => {
-    counter++;
-    return counter < maxSize
-      ? counter
-      : 0;
+    const resultCounter = counter + 1;
+    return resultCounter < maxSize ? resultCounter : 0;
   };
 
-  /**
-   * Gets or wraps
-   * @returns {null}
-   */
   _incrementSendCounter = () => {
     this._sendCounter = this._increment(this._sendCounter, COUNTER_MAX);
   };
@@ -578,9 +567,7 @@ class Device extends EventEmitter {
     this._recieveCounter = this._increment(this._recieveCounter, COUNTER_MAX);
   };
 
-  /**
-   * increments or wraps our token value, and makes sure it isn't in use
-   */
+  // increments or wraps our token value, and makes sure it isn't in use
   _incrementSendToken = (): number => {
     this._sendToken = this._increment(this._sendToken, TOKEN_COUNTER_MAX);
     this._clearToken(this._sendToken);
@@ -590,8 +577,6 @@ class Device extends EventEmitter {
   /**
    * Associates a particular token with a message we're sending, so we know
    * what we're getting back when we get an ACK
-   * @param name
-   * @param sendToken
    */
   _useToken = (name: MessageType, sendToken: number) => {
     const key = this._toHexString(sendToken);
@@ -605,11 +590,8 @@ class Device extends EventEmitter {
     this._tokens[key] = name;
   };
 
-  /**
-   * Clears the association with a particular token
-   * @param sendToken
-   */
-  _clearToken = (sendToken: number): void => {
+  // clears the association with a particular token
+  _clearToken = (sendToken: number) => {
     const key = this._toHexString(sendToken);
 
     if (this._tokens[key]) {
@@ -619,8 +601,6 @@ class Device extends EventEmitter {
 
   _getResponseType = (tokenString: string): ?string => {
     const request = this._tokens[tokenString];
-    // logger.log('respType for key ', tokenStr, ' is ', request);
-
     if (!request) {
       return '';
     }
@@ -644,7 +624,7 @@ class Device extends EventEmitter {
         systemInformation: nullthrows(this._systemInformation),
       };
     } catch (error) {
-      throw new Error('No device state!');
+      throw new Error(`No device state!: ${error.message}`);
     }
   };
 
@@ -733,7 +713,7 @@ class Device extends EventEmitter {
    * This will turn `nyan` mode on or off which just flashes the LED a bunch of
    * colors.
    */
-  raiseYourHand = async(shouldShowSignal: boolean): Promise<*> => {
+  raiseYourHand = async (shouldShowSignal: boolean): Promise<*> => {
     const isBusy = !this._isSocketAvailable(null);
     if (isBusy) {
       throw new Error('This device is locked during the flashing process.');
@@ -821,7 +801,7 @@ class Device extends EventEmitter {
     return true;
   };
 
-  releaseOwnership = (flasher: Flasher): void => {
+  releaseOwnership = (flasher: Flasher) => {
     logger.log('releasing flash ownership ', { coreID: this._id });
     if (this._owningFlasher === flasher) {
       this._owningFlasher = null;
@@ -835,13 +815,6 @@ class Device extends EventEmitter {
     }
   };
 
-  /**
-   *
-   * @param name
-   * @param message
-   * @param callback-- callback expects (value, buf, err)
-   * @returns {null}
-   */
   _transformVariableResult = (
     name: string,
     message: Message,
@@ -865,22 +838,14 @@ class Device extends EventEmitter {
       }
     } catch (error) {
       logger.error(
-        '_transformVariableResult - error transforming response ' +
-        error,
+        `_transformVariableResult - error transforming response: ${error}`,
       );
     }
 
     return result;
   };
 
-
-  /**
-   * Transforms the result from a core function to the correct type.
-   * @param name
-   * @param msg
-   * @param callback
-   * @returns {null}
-   */
+  // Transforms the result from a core function to the correct type.
   _transformFunctionResult = (
     name: string,
     message: Message,
@@ -894,8 +859,7 @@ class Device extends EventEmitter {
       }
     } catch (error) {
       logger.error(
-        '_transformFunctionResult - error transforming response ' +
-        error,
+        `_transformFunctionResult - error transforming response: ${error}`,
       );
       throw error;
     }
@@ -903,12 +867,7 @@ class Device extends EventEmitter {
     return result;
   };
 
-  /**
-   * transforms our object into a nice coap query string
-   * @param name
-   * @param args
-   * @private
-   */
+  // transforms our object into a nice coap query string
   _transformArguments = async (
     name: string,
     args: {[key: string]: string},
@@ -918,23 +877,25 @@ class Device extends EventEmitter {
     }
 
     await this._ensureWeHaveIntrospectionData();
-    name = name.toLowerCase();
+    const lowercaseName = name.toLowerCase();
     const deviceFunctionState = nullthrows(this._deviceFunctionState);
 
-    let functionState = deviceFunctionState[name];
+    let functionState = deviceFunctionState[lowercaseName];
     if (!functionState || !functionState.args) {
-      //maybe it's the old protocol?
+      // maybe it's the old protocol?
       const oldProtocolFunctionState = deviceFunctionState.f;
       if (
         oldProtocolFunctionState &&
-        oldProtocolFunctionState.some(fn => fn.toLowerCase() === name)
+        oldProtocolFunctionState.some(
+          (fn: string): boolean => fn.toLowerCase() === lowercaseName,
+        )
       ) {
-        //current / simplified function format (one string arg, int return type)
+        // current/simplified function format (one string arg, int return type)
         functionState = {
-          returns: 'int',
           args: [
             [null, 'string'],
           ],
+          returns: 'int',
         };
       }
     }
@@ -948,41 +909,57 @@ class Device extends EventEmitter {
   /**
    * Checks our cache to see if we have the function state, otherwise requests
    * it from the core, listens for it, and resolves our deferred on success
-   * @returns {*}
    */
-  _ensureWeHaveIntrospectionData = async (): Promise<*> => {
+  _ensureWeHaveIntrospectionData = async (counter: number = 0): Promise<*> => {
     if (this._hasFunctionState()) {
-      return Promise.resolve();
+      return;
     }
 
     try {
-      this.sendMessage('Describe');
       const token = this.sendMessage('Describe');
-      const systemMessage = await this.listenFor('DescribeReturn');
+      const systemMessage = await this.listenFor(
+        'DescribeReturn',
+        null,
+        token,
+      );
 
-      const functionStateAwaitable = this.listenFor('DescribeReturn');
+      // Sometimes this listener will
+      const functionStateAwaitable = this.listenFor(
+        'DescribeReturn',
+        null,
+        token,
+      );
 
-      //got a description, is it any good?
+      // got a description, is it any good?
       const data = systemMessage.getPayload();
       const systemInformation = JSON.parse(data.toString());
 
       // In the newer firmware the application data comes in a later message.
       // We run a race to see if the function state comes in the first response.
+      let gotFunctionState = false;
       const functionState = await Promise.race([
-        functionStateAwaitable.then(applicationMessage => {
-          //got a description, is it any good?
-          const data = applicationMessage.getPayload();
-          return JSON.parse(data.toString());
+        functionStateAwaitable.then((applicationMessage: Message): Object => {
+          gotFunctionState = true;
+          // got a description, is it any good?
+          const applicationMessageData = applicationMessage.getPayload();
+          return JSON.parse(applicationMessageData.toString());
         }),
-        new Promise((resolve, reject) => {
+        new Promise((resolve: (systemInformation: Object) => void) => {
           if (systemInformation.f && systemInformation.v) {
+            gotFunctionState = true;
             resolve(systemInformation);
           }
         }),
       ]);
 
+      // only retry 3 times
+      if (!gotFunctionState && counter && counter < 3) {
+        await this._ensureWeHaveIntrospectionData((counter || 0) + 1);
+        return;
+      }
+
       if (functionState && functionState.v) {
-        //'v':{'temperature':2}
+        // 'v':{'temperature':2}
         functionState.v = Messages.translateIntTypes(functionState.v);
       }
 
@@ -1005,7 +982,7 @@ class Device extends EventEmitter {
     this.sendCoreEvent(event);
   };
 
-  sendCoreEvent = (event: Event): void => {
+  sendCoreEvent = (event: Event) => {
     const { data, isPublic, name, publishedAt, ttl } = event;
 
     const rawFunction = (message: Message): void => {
@@ -1023,12 +1000,6 @@ class Device extends EventEmitter {
       ? DEVICE_MESSAGE_EVENTS_NAMES.PUBLIC_EVENT
       : DEVICE_MESSAGE_EVENTS_NAMES.PRIVATE_EVENT;
 
-    // const userID = (this._userId || '').toLowerCase() + '/';
-    // name = name ? name.toString() : name;
-    // if (name && name.indexOf && (name.indexOf(userID)===0)) {
-    //   name = name.substring(userID.length);
-    // }
-
     this.sendMessage(
       messageName,
       {
@@ -1039,17 +1010,15 @@ class Device extends EventEmitter {
     );
   };
 
-  _hasFunctionState = (): boolean => {
-    return !!this._deviceFunctionState;
-  };
+  _hasFunctionState = (): boolean =>
+    !!this._deviceFunctionState;
 
-  _hasParticleVariable = (name: string): boolean => {
-    return !!(
+  _hasParticleVariable = (name: string): boolean =>
+    !!(
       this._deviceFunctionState &&
       this._deviceFunctionState.v &&
       this._deviceFunctionState.v[name]
     );
-  };
 
   _hasSparkFunction = (name: string): boolean => {
     // has state, and... the function is an object, or it's in the function array
@@ -1061,18 +1030,16 @@ class Device extends EventEmitter {
         (
           this._deviceFunctionState.f &&
           this._deviceFunctionState.f.some(
-            fn => fn.toLowerCase() === lowercaseName,
+            (fn: string): boolean => fn.toLowerCase() === lowercaseName,
           )
         )
       )
     );
   };
 
-  _toHexString = (value: number): string => {
-    return (value < 10 ? '0' : '') + value.toString(16);
-  };
+  _toHexString = (value: number): string =>
+    (value < 10 ? '0' : '') + value.toString(16);
 
-  // eslint-disable-next-line no-confusing-arrow
   getID = (): string => this._id;
 
   getRemoteIPAddress = (): string =>
@@ -1080,10 +1047,8 @@ class Device extends EventEmitter {
       ? this._socket.remoteAddress.toString()
       : 'unknown';
 
-
   disconnect = (message: ?string = '') => {
-    // eslint-disable-next-line no-plusplus
-    this._disconnectCounter++;
+    this._disconnectCounter += 1;
 
     if (this._disconnectCounter > 1) {
       // don't multi-disconnect

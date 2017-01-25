@@ -15,13 +15,17 @@
   },
   "license": "LGPL-3.0",
   "scripts": {
-    "lint": "eslint -- .",
+    "lint": "eslint --fix -- .",
     "postinstall": "npm run update-firmware",
     "start": "babel ./src --out-dir ./dist --watch",
     "test": "ava",
     "test:watch": "ava --watch",
     "update-firmware": "node ./dist/scripts/update-firmware-binaries"
   },
+  "pre-commit": [
+    "lint",
+    "test"
+  ],
   "ava": {
     "verbose": true,
     "babel": "inherit",
@@ -47,10 +51,14 @@
     "request": "^2.79.0",
     "rmfr": "^1.0.1",
     "ursa": "*",
+<<<<<<< HEAD
     "uuid": "^3.0.1",
     "when": "*",
     "xtend": "*",
     "node-ipc": "*"
+=======
+    "uuid": "^3.0.1"
+>>>>>>> 1974b38e3ceedbef35a4581e91921ed0ef1bed36
   },
   "devDependencies": {
     "ava": "^0.17.0",
@@ -72,6 +80,7 @@
     "eslint-plugin-import": "^2.2.0",
     "eslint-plugin-sorting": "^0.3.0",
     "flow-bin": "^0.37.0",
+    "pre-commit": "^1.2.2",
     "sinon": "^1.17.7"
   }
 }
