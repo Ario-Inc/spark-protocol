@@ -241,8 +241,6 @@ class Device extends EventEmitter {
       this._getHello(handshakeBuffer);
       this._sendHello(cipherStream, decipherStream);
 
-      this.ready();
-
       pendingBuffers.map((data: Buffer): void => this.routeMessage(data));
       decipherStream.on('readable', () => {
         const chunk = ((decipherStream.read(): any): Buffer);
@@ -253,6 +251,7 @@ class Device extends EventEmitter {
       });
     } catch (error) {
       this.disconnect(error);
+      throw error;
     }
   };
 

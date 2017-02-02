@@ -304,8 +304,6 @@ var Device = function (_EventEmitter) {
                         _this._getHello(handshakeBuffer);
                         _this._sendHello(cipherStream, decipherStream);
 
-                        _this.ready();
-
                         pendingBuffers.map(function (data) {
                           return _this.routeMessage(data);
                         });
@@ -317,7 +315,7 @@ var Device = function (_EventEmitter) {
                           _this.routeMessage(chunk);
                         });
 
-                      case 14:
+                      case 13:
                       case 'end':
                         return _context2.stop();
                     }
@@ -326,7 +324,7 @@ var Device = function (_EventEmitter) {
               })(), 't0', 2);
 
             case 2:
-              _context3.next = 7;
+              _context3.next = 8;
               break;
 
             case 4:
@@ -334,8 +332,9 @@ var Device = function (_EventEmitter) {
               _context3.t1 = _context3['catch'](0);
 
               _this.disconnect(_context3.t1);
+              throw _context3.t1;
 
-            case 7:
+            case 8:
             case 'end':
               return _context3.stop();
           }
