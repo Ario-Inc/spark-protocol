@@ -212,32 +212,34 @@ var DeviceServer = function () {
 
     this._onDeviceDisconnect = function () {
       var _ref2 = (0, _asyncToGenerator3.default)(_regenerator2.default.mark(function _callee3(device) {
-        var deviceID, connectionKey, deviceAttributes, ownerID, newDevice;
+        var deviceID, newDevice, connectionKey, deviceAttributes, ownerID;
         return _regenerator2.default.wrap(function _callee3$(_context3) {
           while (1) {
             switch (_context3.prev = _context3.next) {
               case 0:
                 deviceID = device.getID();
-                connectionKey = device.getConnectionKey();
-                _context3.next = 4;
-                return _this._deviceAttributeRepository.getById(deviceID);
-
-              case 4:
-                deviceAttributes = _context3.sent;
-                ownerID = deviceAttributes && deviceAttributes.ownerID;
                 newDevice = _this._devicesById.get(deviceID);
 
                 if (!(device !== newDevice)) {
-                  _context3.next = 9;
+                  _context3.next = 4;
                   break;
                 }
 
                 return _context3.abrupt('return');
 
-              case 9:
+              case 4:
 
                 _this._devicesById.delete(deviceID);
                 _this._eventPublisher.unsubscribeBySubscriberID(deviceID);
+
+                connectionKey = device.getConnectionKey();
+                _context3.next = 9;
+                return _this._deviceAttributeRepository.getById(deviceID);
+
+              case 9:
+                deviceAttributes = _context3.sent;
+                ownerID = deviceAttributes && deviceAttributes.ownerID;
+
 
                 _this.publishSpecialEvent(_Device.SYSTEM_EVENT_NAMES.SPARK_STATUS, 'offline', deviceID, ownerID);
                 _logger2.default.log('Session ended for device with ID: ' + deviceID + ' with connectionKey: ' + ('' + (connectionKey || 'no connection key')));
@@ -279,31 +281,36 @@ var DeviceServer = function () {
                           _logger2.default.log('Device online!');
                           deviceID = device.getID();
 
-
-                          if (_this._devicesById.has(deviceID)) {
-                            existingConnection = _this._devicesById.get(deviceID);
-
-                            (0, _nullthrows2.default)(existingConnection).disconnect('Device was already connected. Reconnecting.\r\n');
-
-                            _this._onDeviceDisconnect(device);
+                          if (!_this._devicesById.has(deviceID)) {
+                            _context5.next = 7;
+                            break;
                           }
+
+                          existingConnection = _this._devicesById.get(deviceID);
+
+                          (0, _nullthrows2.default)(existingConnection).disconnect('Device was already connected. Reconnecting.\r\n');
+
+                          _context5.next = 7;
+                          return _this._onDeviceDisconnect(device);
+
+                        case 7:
 
                           _this._devicesById.set(deviceID, device);
 
-                          _context5.next = 6;
+                          _context5.next = 10;
                           return _this._deviceAttributeRepository.getById(deviceID);
 
-                        case 6:
+                        case 10:
                           existingAttributes = _context5.sent;
                           ownerID = existingAttributes && existingAttributes.ownerID;
 
 
                           _this.publishSpecialEvent(_Device.SYSTEM_EVENT_NAMES.SPARK_STATUS, 'online', deviceID, ownerID);
 
-                          _context5.next = 11;
+                          _context5.next = 15;
                           return device.getDescription();
 
-                        case 11:
+                        case 15:
                           description = _context5.sent;
                           _FirmwareManager$getA = _FirmwareManager2.default.getAppModule(description.systemInformation), uuid = _FirmwareManager$getA.uuid;
                           deviceAttributes = (0, _extends3.default)({
@@ -327,7 +334,7 @@ var DeviceServer = function () {
                           systemInformation = description.systemInformation;
 
                           if (!systemInformation) {
-                            _context5.next = 19;
+                            _context5.next = 23;
                             break;
                           }
 
@@ -360,9 +367,9 @@ var DeviceServer = function () {
                                 }
                               }
                             }, _callee4, _this);
-                          })(), 't0', 19);
+                          })(), 't0', 23);
 
-                        case 19:
+                        case 23:
                         case 'end':
                           return _context5.stop();
                       }

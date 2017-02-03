@@ -913,6 +913,12 @@ class Device extends EventEmitter {
     if (this._hasFunctionState()) {
       return;
     }
+    // We need to wait a little bit to make sure that the device's function
+    // data is ready. This is super hacky but there wasn't another event to
+    // listen to.
+    await new Promise(
+      (resolve: () => void): number => setTimeout((): void => resolve(), 10),
+    );
 
     try {
       // Because some firmware versions do not send the app + system state in a
@@ -940,7 +946,6 @@ class Device extends EventEmitter {
           }
 
           const data = JSON.parse(payload.toString());
-
 
           if (!systemInformation) {
             systemInformation = data;
