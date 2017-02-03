@@ -177,6 +177,7 @@ class Device extends EventEmitter {
   _sendCounter: number = 0;
   _sendToken: number = 0;
   _socket: Socket;
+  _socketTimeoutInterval: ?number = null;
   _systemInformation: ?Object;
   _tokens: {[key: string]: MessageType} = {};
   _handshake: Handshake;
@@ -248,11 +249,26 @@ class Device extends EventEmitter {
           return;
         }
         this.routeMessage(chunk);
+        this._clientHasWrittenToSocket();
       });
     } catch (error) {
       this.disconnect(error);
       throw error;
     }
+  };
+
+  // This handles the case on some operating systems where `socket.setTimeout`
+  // doesn't work. On windows, that function will timeout when if the client
+  // doesn't send a reply. On Linux as long as someone is reading or writing
+  // to a socket it will stay open.
+  _clientHasWrittenToSocket = () => {
+    if (this._socketTimeoutInterval) {
+      clearTimeout(this._socketTimeoutInterval);
+    }
+    this._socketTimeoutInterval = setTimeout(
+      (): void => this.disconnect('socket timeout'),
+      SOCKET_TIMEOUT,
+    );
   };
 
   _getHello = (chunk: Buffer) => {
@@ -437,7 +453,6 @@ class Device extends EventEmitter {
     }
     this._cipherStream.write(message);
   };
-
 
   sendMessage = (
     messageName: MessageType,
