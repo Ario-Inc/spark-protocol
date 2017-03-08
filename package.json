@@ -15,8 +15,8 @@
   },
   "license": "LGPL-3.0",
   "scripts": {
-    "lint": "eslint --fix -- .",
-    "postinstall": "npm run update-firmware",
+    "build": "babel ./src --out-dir ./dist",
+    "lint": "eslint --fix --max-warnings 0 -- .",
     "start": "babel ./src --out-dir ./dist --watch",
     "test": "ava",
     "test:watch": "ava --watch",

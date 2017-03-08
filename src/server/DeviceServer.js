@@ -47,8 +47,8 @@ import {
 } from '../clients/Device';
 
 type DeviceServerConfig = {|
-  host: string,
-  port: number,
+  HOST: string,
+  PORT: number,
 |};
 
 const NAME_GENERATOR = Moniker.generator([Moniker.adjective, Moniker.noun]);
@@ -97,7 +97,7 @@ class DeviceServer {
       logger.error(`something blew up ${error.message}`),
     );
 
-    const serverPort = this._config.port.toString();
+    const serverPort = this._config.PORT.toString();
     server.listen(
       serverPort,
       (): void => logger.log(`Server started on port: ${serverPort}`),
@@ -221,6 +221,12 @@ class DeviceServer {
     const connectionKey = device.getConnectionKey();
     const deviceAttributes =
       await this._deviceAttributeRepository.getById(deviceID);
+
+    await this._deviceAttributeRepository.update({
+      ...deviceAttributes,
+      lastHeard: device.ping().lastPing,
+    });
+
     const ownerID = deviceAttributes && deviceAttributes.ownerID;
 
     this.publishSpecialEvent(
@@ -285,6 +291,7 @@ class DeviceServer {
         appHash: uuid,
         deviceID,
         ip: device.getRemoteIPAddress(),
+        lastHeard: new Date(),
         particleProductId: description.productID,
         productFirmwareVersion: description.firmwareVersion,
       };
@@ -533,7 +540,7 @@ class DeviceServer {
 
     this._eventPublisher.subscribe(
       messageName,
-      device.onCoreEvent,
+      device.onDeviceEvent,
       { mydevices: isFromMyDevices, userID: ownerID },
       deviceID,
     );
