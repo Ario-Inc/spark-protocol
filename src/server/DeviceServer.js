@@ -47,8 +47,8 @@ import {
 } from '../clients/Device';
 
 type DeviceServerConfig = {|
-  host: string,
-  port: number,
+  HOST: string,
+  PORT: number,
 |};
 
 const NAME_GENERATOR = Moniker.generator([Moniker.adjective, Moniker.noun]);
@@ -69,6 +69,7 @@ class DeviceServer {
   _cryptoManager: CryptoManager;
   _deviceAttributeRepository: Repository<DeviceAttributes>;
   _devicesById: Map<string, Device> = new Map();
+  _enableSystemFirmwareAutoupdates: boolean;
   _eventPublisher: EventPublisher;
 
   constructor(
@@ -77,12 +78,14 @@ class DeviceServer {
     cryptoManager: CryptoManager,
     eventPublisher: EventPublisher,
     deviceServerConfig: DeviceServerConfig,
+    enableSystemFirmwareAutoupdates: boolean,
   ) {
     this._config = deviceServerConfig;
     this._deviceAttributeRepository = deviceAttributeRepository;
     this._cryptoManager = cryptoManager;
     this._claimCodeManager = claimCodeManager;
     this._eventPublisher = eventPublisher;
+    this._enableSystemFirmwareAutoupdates = enableSystemFirmwareAutoupdates;
   }
 
   start() {
@@ -97,7 +100,7 @@ class DeviceServer {
       logger.error(`something blew up ${error.message}`),
     );
 
-    const serverPort = this._config.port.toString();
+    const serverPort = this._config.PORT.toString();
     server.listen(
       serverPort,
       (): void => logger.log(`Server started on port: ${serverPort}`),
@@ -221,6 +224,12 @@ class DeviceServer {
     const connectionKey = device.getConnectionKey();
     const deviceAttributes =
       await this._deviceAttributeRepository.getById(deviceID);
+
+    await this._deviceAttributeRepository.update({
+      ...deviceAttributes,
+      lastHeard: device.ping().lastPing,
+    });
+
     const ownerID = deviceAttributes && deviceAttributes.ownerID;
 
     this.publishSpecialEvent(
@@ -285,6 +294,7 @@ class DeviceServer {
         appHash: uuid,
         deviceID,
         ip: device.getRemoteIPAddress(),
+        lastHeard: new Date(),
         particleProductId: description.productID,
         productFirmwareVersion: description.firmwareVersion,
       };
@@ -304,27 +314,32 @@ class DeviceServer {
       }
 
       const systemInformation = description.systemInformation;
-      if (systemInformation) {
-        const config = await FirmwareManager.getOtaSystemUpdateConfig(
-          systemInformation,
+      if (
+        !this._enableSystemFirmwareAutoupdates ||
+        !systemInformation
+      ) {
+        return;
+      }
+
+      const config = await FirmwareManager.getOtaSystemUpdateConfig(
+        systemInformation,
+      );
+
+      if (config) {
+        setTimeout(
+          () => {
+            this.publishSpecialEvent(
+              SYSTEM_EVENT_NAMES.SAFE_MODE_UPDATING,
+              // Lets the user know if it's the system update part 1/2/3
+              config.moduleIndex + 1,
+              deviceID,
+              ownerID,
+            );
+
+            device.flash(config.systemFile);
+          },
+          1000,
         );
-
-        if (config) {
-          setTimeout(
-            () => {
-              this.publishSpecialEvent(
-                SYSTEM_EVENT_NAMES.SAFE_MODE_UPDATING,
-                // Lets the user know if it's the system update part 1/2/3
-                config.moduleIndex + 1,
-                deviceID,
-                ownerID,
-              );
-
-              device.flash(config.systemFile);
-            },
-            1000,
-          );
-        }
       }
     } catch (error) {
       logger.error(error);
@@ -533,7 +548,7 @@ class DeviceServer {
 
     this._eventPublisher.subscribe(
       messageName,
-      device.onCoreEvent,
+      device.onDeviceEvent,
       { mydevices: isFromMyDevices, userID: ownerID },
       deviceID,
     );
