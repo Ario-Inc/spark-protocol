@@ -305,12 +305,14 @@ var Device = function (_EventEmitter) {
                           return _this.routeMessage(data);
                         });
                         decipherStream.on('readable', function () {
-                          var chunk = decipherStream.read();
-                          if (!chunk) {
-                            return;
-                          }
-                          _this.routeMessage(chunk);
-                          _this._clientHasWrittenToSocket();
+                          process.nextTick(function () {
+                            var chunk = decipherStream.read();
+                            _this._clientHasWrittenToSocket();
+                            if (!chunk) {
+                              return;
+                            }
+                            _this.routeMessage(chunk);
+                          });
                         });
 
                       case 13:
@@ -523,7 +525,9 @@ var Device = function (_EventEmitter) {
         return -1;
       }
 
-      _this._cipherStream.write(message);
+      process.nextTick(function () {
+        return (0, _nullthrows2.default)(_this._cipherStream).write(message);
+      });
 
       return token || 0;
     };
